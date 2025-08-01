@@ -1,5 +1,5 @@
 {
-  "name": "My Dev Container",
+  "name": "Motorcycle-Weather",
   "dockerComposeFile": "../compose.yaml",
   "service": "motorcycle-weather",     // <- Replace with your main service
   "workspaceFolder": "/motorcycle-weather",    // <- Adjust based on your container's path
