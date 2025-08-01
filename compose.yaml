@@ -1,11 +1,11 @@
 services:
-  leetcode:
+  motorcycle-weather:
     build:
       context: .
       dockerfile: ./Dockerfile
     working_dir: /motorcycle-weather
     volumes:
-      - ./:/motorcycle-weather-app
+      - ./:/motorcycle-weather
     container_name: motorcycle-weather-app
     command: ["sleep", "infinity"]
 
