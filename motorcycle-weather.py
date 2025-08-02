@@ -1,6 +1,7 @@
 from dotenv import load_dotenv
 from directions import computeRoutes
 from weather import getWeather
+from gearSuggester import suggestGear
 
 
 MESSAGE_SEPARATOR = "=============================================="
@@ -24,15 +25,18 @@ def main():
     # Get weather for directions. Directions are saved as set of distances and coordinates.
     print("Getting weather")
     points_to_forecast_map = getWeather(route)
-    print("Weather Recieved")
+    print("Weather Received")
 
-    # print(points_to_forecast_map)
-    # TODO I would also like to use progress bars instead of printing end messages
+    # TODO: I would also like to use progress bars instead of printing end messages
 
-    # TODO compile forecasts and get a suggest gear I may need.
-    # note: right now the forecasts I get are for a couple of days, and do not match to the exact time I will reach a destination. In the future I want to get time to each coordinate, and use that info to get the appropriate weather at that time so that I can better predict what gear is actually needed. For example if I'm going to arrive at a set of coordinates after a rain storm has already passed I probably don't need to bring my rain jacket.
-    print("TODO Calculating gear needed")
-    print("TODO The following gear is needed for your ride:")
+    print("Calculating gear needed")
+    suggested_gear = suggestGear(points_to_forecast_map)
+    print("The following gear is needed for your ride:")
+    for gear in suggested_gear:
+       print(gear)
+
+
+    # TODO: impliment a db so that I don't have to keep getting the same data over and over. Also need to figure out how weather.com is giving my TTL of weather for each point as well as coordinate to point TTL.
 
 
 if __name__ == "__main__":

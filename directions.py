@@ -26,6 +26,7 @@ class Step:
 
 
 def computeRoutes(origin: str, destination: str) -> list[Step]:
+    #TODO: need to get travel time and arrival time at each coordinate
     url = "https://routes.googleapis.com/directions/v2:computeRoutes"
     headers = {
         "Content-Type": "application/json",
@@ -48,17 +49,21 @@ def computeRoutes(origin: str, destination: str) -> list[Step]:
 
     # Get list of coordinates and distances to each
     steps = []
-    for route in response_json["routes"]:
-        for leg in route["legs"]:
-            for step in leg["steps"]:
-                encoded_polyline = step["polyline"]["encodedPolyline"]
-                decoded_polyline = polyline.decode(encoded_polyline)
-                coordinates_list = []
-                for coordinate_str_pair in decoded_polyline:
-                    coordinates_list.append(Coordinates(latitude=str(coordinate_str_pair[0]), longitude=str(coordinate_str_pair[1])))
 
-                new_step = Step(step["distanceMeters"], encoded_polyline, coordinates_list)
-                steps.append(new_step)
+    if response.status_code == 200:
+        for route in response_json["routes"]:
+            for leg in route["legs"]:
+                for step in leg["steps"]:
+                    encoded_polyline = step["polyline"]["encodedPolyline"]
+                    decoded_polyline = polyline.decode(encoded_polyline)
+                    coordinates_list = []
+                    for coordinate_str_pair in decoded_polyline:
+                        coordinates_list.append(Coordinates(latitude=str(coordinate_str_pair[0]), longitude=str(coordinate_str_pair[1])))
 
+                    new_step = Step(step["distanceMeters"], encoded_polyline, coordinates_list)
+                    steps.append(new_step)
+
+    #TODO: need to update logic to include error message if I don't get the route correctly.
     return steps
+
 
