@@ -5,14 +5,14 @@ from directions import computeRoutes
 def main():
     load_dotenv()
 
-    print("Motorcycle Weather")
+    print("Welcome to Motorcycle Weather")
 
     # Get directions between two routes
     origin = "1600 Amphitheatre Parkway, Mountain View, CA"
     destination = "450 Serra Mall, Stanford, CA"
+    print(f"Getting weather info for your route from {origin} to {destination}")
 
     steps = computeRoutes(origin, destination)
-
     for step in steps:
         print(f"distance_meters={step.distance_meters}, coordinates={step.coordinates}")
 
