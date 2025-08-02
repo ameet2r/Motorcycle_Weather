@@ -1,30 +1,43 @@
-from dotenv import load_dotenv
-from directions import computeRoutes
+import requests
+import os
 
 
-def main():
-    load_dotenv()
-
-    print("Welcome to Motorcycle Weather")
-
-    # Get directions between two routes
-    origin = "1600 Amphitheatre Parkway, Mountain View, CA"
-    destination = "450 Serra Mall, Stanford, CA"
-    print(f"Getting weather info for your route from {origin} to {destination}")
-
-    steps = computeRoutes(origin, destination)
-    for step in steps:
-        print(f"distance_meters={step.distance_meters}, coordinates={step.coordinates}")
-
-    # TODO coordinates for the many locations on the given route. Maybe only the major cities? I think the weather gives info for areas within a 2.5km radius (need to double check this). Break into these sections.
+def truncateCoordinate(coordinate: str, max_decimal_places: int = 4) -> str:
+    if "." not in coordinate:
+        return coordinate
     
-    # TODO get forcast for each set of coordinates. Ideally at the exact time that I will reach each set of coordinates. Maybe using the hourly forecast if that is available?
+    whole, fraction = coordinate.split(".")
+    if len(fraction) > max_decimal_places:
+        return f"{whole}.{fraction[:max_decimal_places]}"
+    else:
+        return coordinate
 
-    # TODO display forecast for each set of coordinates
 
-    # TODO suggest gear that I will need.
+def getWeather(latitude: str, longitude: str):
+    print(f"Retrieving Weather for latitude={latitude}, longitude={longitude}")
 
+    truncated_latitude = truncateCoordinate(latitude)
+    truncated_longitude = truncateCoordinate(longitude)
 
-if __name__ == "__main__":
-    main()
+    # https://api.weather.gov/points/{lat},{lon}.
+    points_url = f"https://api.weather.gov/points/{truncated_latitude},{truncated_longitude}"
+    headers = {
+        "Accept": "application/geo+json",
+        "User-Agent": os.getenv("WEATHER_DOT_GOV_API_KEY")
+    }
+     
+    response = requests.get(points_url, headers=headers)
+    response_json = response.json()
+
+    response_properties = response_json["properties"]
+    forecast_url = response_properties["forecast"]
+    hourly_forecast_url = response_properties["forecastHourly"]
+    
+    forecast_response = requests.get(forecast_url, headers=headers)
+    forecast_response_json = forecast_response.json()
+    print(f"forecast_response_json={forecast_response_json}")
+
+    # hourly_forecast_response = requests.get(hourly_forecast_url, headers=headers)
+    # hourly_forecast_response_json = hourly_forecast_response.json()
+    # print(f"hourly_forecast_response_json={hourly_forecast_response_json}")
 

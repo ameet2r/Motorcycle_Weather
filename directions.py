@@ -3,8 +3,14 @@ import os
 import polyline
 
 
+class Coordinates:
+    def __init__(self, latitude: str, longitude: str):
+        self.latitude = latitude
+        self.longitude = longitude
+
+
 class Step:
-    def __init__(self, distanceMeters, polyline, coordinates):
+    def __init__(self, distanceMeters: str, polyline: str, coordinates: list[Coordinates]):
         self.distance_meters = distanceMeters
         self.polyline = polyline
         self.coordinates = coordinates
@@ -37,8 +43,12 @@ def computeRoutes(origin: str, destination: str) -> list[Step]:
         for leg in route["legs"]:
             for step in leg["steps"]:
                 encoded_polyline = step["polyline"]["encodedPolyline"]
-                coordinates = polyline.decode(encoded_polyline)
-                new_step = Step(step["distanceMeters"], encoded_polyline, coordinates)
+                decoded_polyline = polyline.decode(encoded_polyline)
+                coordinates_list = []
+                for coordinate_str_pair in decoded_polyline:
+                    coordinates_list.append(Coordinates(latitude=str(coordinate_str_pair[0]), longitude=str(coordinate_str_pair[1])))
+
+                new_step = Step(step["distanceMeters"], encoded_polyline, coordinates_list)
                 steps.append(new_step)
 
     return steps
