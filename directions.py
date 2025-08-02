@@ -8,6 +8,15 @@ class Coordinates:
         self.latitude = latitude
         self.longitude = longitude
 
+    def __eq__(self, other):
+        return isinstance(other, Coordinates) and self.latitude == other.latitude and self.longitude == other.longitude
+
+    def __hash__(self):
+        return hash((self.latitude, self.longitude))
+
+    def __repr__(self):
+        return f"Coordinates({self.latitude}, {self.longitude})"
+
 
 class Step:
     def __init__(self, distanceMeters: str, polyline: str, coordinates: list[Coordinates]):
