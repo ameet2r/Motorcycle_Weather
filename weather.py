@@ -1,6 +1,7 @@
 import requests
 import os
 from directions import Step
+from tqdm import tqdm
 
 
 HEADERS = {
@@ -56,18 +57,16 @@ def getWeather(route: list[Step]) -> dict:
     points_to_forecast_urls_map = {}
     points_to_forecast_map = {}
 
-    print("Getting points")
     # Get points
-    for step in route:
+    for step in tqdm(route, desc="Getting Points"):
         for coordinate in step.coordinates:
             # Don't request the same coordinates if we have already done them.
             coordinate_key = (coordinate.latitude, coordinate.longitude)
             if coordinate_key not in coordinate_to_point_map:
                 coordinate_to_point_map[coordinate_key] = getPoints(latitude=coordinate.latitude, longitude=coordinate.longitude, points_to_forecast_urls_map=points_to_forecast_urls_map)
 
-    print("Getting forecasts")
     # Get forecasts 
-    for step in route:
+    for step in tqdm(route, desc="Getting Forecasts"):
         for coordinate in step.coordinates:
             coordinate_key = (coordinate.latitude, coordinate.longitude)
             point = coordinate_to_point_map[coordinate_key]
@@ -83,10 +82,6 @@ def getWeather(route: list[Step]) -> dict:
                     points_to_forecast_map[point] = None
     
     return points_to_forecast_map
-
-
-
-
 
             # hourly_forecast_response = requests.get(hourly_forecast_url, headers=headers)
             # hourly_forecast_response_json = hourly_forecast_response.json()

@@ -1,4 +1,5 @@
 from collections import defaultdict
+from tqdm import tqdm
 
 
 WEATHER_TO_GEAR_MAP = {
@@ -12,7 +13,7 @@ def suggestGear(point_to_forecast_map: dict) -> set:
     point_to_recommended_gear_map = defaultdict(list)
     suggested_gear = set()
 
-    for point in point_to_forecast_map:
+    for point in tqdm(point_to_forecast_map, desc="Calculating Gear Suggestions"):
         distinct_short_forecasts = set()
         properties = point_to_forecast_map[point]["properties"]
         periods = properties["periods"]
