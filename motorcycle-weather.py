@@ -48,9 +48,6 @@ def main():
     for gear in suggested_gear:
        print(gear)
 
-
-    # TODO: impliment a db so that I don't have to keep getting the same data over and over. Also need to figure out how weather.com is giving my TTL of weather for each point as well as coordinate to point TTL.
-
     # TODO: turn app into a service so that it stays alive until I turn it off
 
 

@@ -169,5 +169,6 @@ def getWeather(route: list[Step]) -> dict:
 
     #     return f"Error getting response for the following request to the points endpoint. url={points_url}, request={response.request}, status_code={response.status_code}"
 
+    #TODO: Save Forecasts? Maybe last for a couple of hours before refetching from api?
     #TODO: need to update logic to include error messages if I don't get the forecast correctly.
 
