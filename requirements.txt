@@ -2,3 +2,5 @@ requests
 python-dotenv
 polyline
 tqdm
+psycopg2-binary
+redis

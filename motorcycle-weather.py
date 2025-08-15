@@ -3,32 +3,28 @@ from directions import computeRoutes
 from weather import getWeather
 from gearSuggester import suggestGear
 from tqdm import tqdm
+from db import init_db_pool, create_tables, close_pool
+from cache import close_redis
 
 
 MESSAGE_SEPARATOR = "=============================================="
 
-# def download_podcast(url, filename):
-#     response = requests.get(url, stream=True)
+def startup_event():
+    init_db_pool()
+    create_tables()
+    print("Database pool initialized and tables ensured.")
 
-#     if response.status_code == 200:
-#         total_size = int(response.headers.get("content-length", 0)) # Get file size
-#         block_size = 1024 # Download in 1KB chuncks
-#         with open(filename, "wb") as file, tqdm(
-#             desc=filename,
-#             total=total_size,
-#             unit="B",
-#             unit_scale=True,
-#             unit_divisor=block_size
-#         ) as bar:
-#             for chunk in response.iter_content(block_size):
-#                 file.write(chunk)
-#                 bar.update(len(chunk))
-#         print(f"{filename} downloaded successfully")
-#     else:
-#         print(f"{filename} failed to download. Status code: {response.status_code}")
-  
+
+def shutdown_event():
+    print("Shutting down service...")
+    close_pool()
+    close_redis()
+    print("Database pool and Redis closed.")
+
+
 def main():
     load_dotenv()
+    startup_event()
 
     print("Welcome to Motorcycle Weather")
     print(MESSAGE_SEPARATOR)
@@ -54,6 +50,8 @@ def main():
 
 
     # TODO: impliment a db so that I don't have to keep getting the same data over and over. Also need to figure out how weather.com is giving my TTL of weather for each point as well as coordinate to point TTL.
+
+    # TODO: turn app into a service so that it stays alive until I turn it off
 
 
 if __name__ == "__main__":
