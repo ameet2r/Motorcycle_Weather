@@ -41,14 +41,12 @@ def main():
     route = computeRoutes(locations)
 
     # Get weather for directions. Directions are saved as set of distances and coordinates.
-    points_to_forecast_map = getWeather(route)
+    getWeather(route)
 
-    suggested_gear = suggestGear(points_to_forecast_map)
+    suggested_gear = suggestGear(route)
     print("The following gear is needed for your ride:")
     for gear in suggested_gear:
        print(gear)
-
-    # TODO: turn app into a service so that it stays alive until I turn it off
 
 
 if __name__ == "__main__":
