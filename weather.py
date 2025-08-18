@@ -53,7 +53,6 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
     points_url = f"https://api.weather.gov/points/{truncated_latitude},{truncated_longitude}"
     response = requests.get(points_url, headers=HEADERS)
     response_json = response.json()
-    print(f"response_json type={type(response_json)}")
     response_header_cache_control = response.headers["Cache-Control"]
 
     max_age_hours = 0

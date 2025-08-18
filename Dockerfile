@@ -35,4 +35,5 @@ USER appuser
 
 # Copy the source code into the container.
 COPY . .
+CMD ["uvicorn", "motorcycle-weather:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 

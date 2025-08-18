@@ -5,49 +5,57 @@ from gearSuggester import suggestGear
 from tqdm import tqdm
 from db import init_db_pool, create_tables, close_pool
 from cache import close_redis
+from fastapi import FastAPI
+from pydantic import BaseModel
 
 
 MESSAGE_SEPARATOR = "=============================================="
 
-def startup_event():
+app = FastAPI()
+
+@app.on_event("startup")
+def startupEvent():
+    print("Welcome to Motorcycle Weather")
+    print(MESSAGE_SEPARATOR)
+
+    load_dotenv()
     init_db_pool()
     create_tables()
-    print("Database pool initialized and tables ensured.")
+    print("Environment loaded, Database pool initialized, and tables ensured.")
 
 
-def shutdown_event():
+def shutdownEvent():
     print("Shutting down service...")
     close_pool()
     close_redis()
     print("Database pool and Redis closed.")
 
+class MotorcycleWeatherRequest(BaseModel):
+    origin: str
+    destination: str
 
-def main():
-    load_dotenv()
-    startup_event()
+@app.post("/motorcycleWeather/")
+def motorcycleWeather(request: MotorcycleWeatherRequest):
+    locations = []
+    locations.append((request.origin, request.destination))
 
-    print("Welcome to Motorcycle Weather")
+    print(f"Getting weather info for your route from {request.origin} to {request.destination}")
     print(MESSAGE_SEPARATOR)
 
     # Get directions between two locations
-    locations = []
-    origin = "1600 Amphitheatre Parkway, Mountain View, CA"
-    destination = "450 Serra Mall, Stanford, CA"
-    locations.append((origin, destination))
-
-    print(f"Getting weather info for your route from {origin} to {destination}")
-    print(MESSAGE_SEPARATOR)
-
     route = computeRoutes(locations)
 
     # Get weather for directions. Directions are saved as set of distances and coordinates.
     getWeather(route)
 
     suggested_gear = suggestGear(route)
-    print("The following gear is needed for your ride:")
-    for gear in suggested_gear:
-       print(gear)
+    print(f"The following gear is needed for your ride: {suggested_gear}")
+
+    # Build result
+    result = {}
+    result["status"] = 200
+    result["suggestedGear"] = suggested_gear
+
+    return result
 
 
-if __name__ == "__main__":
-    main()
