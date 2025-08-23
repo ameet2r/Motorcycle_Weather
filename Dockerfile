@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 # the application crashes without emitting any logs due to buffering.
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /app
+WORKDIR /Motorcycle_Weather
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/#user
@@ -35,5 +35,4 @@ USER appuser
 
 # Copy the source code into the container.
 COPY . .
-CMD ["uvicorn", "motorcycle-weather:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 

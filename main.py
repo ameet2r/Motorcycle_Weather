@@ -14,7 +14,7 @@ MESSAGE_SEPARATOR = "=============================================="
 app = FastAPI()
 
 @app.on_event("startup")
-def startupEvent():
+async def startupEvent():
     print("Welcome to Motorcycle Weather")
     print(MESSAGE_SEPARATOR)
 
@@ -24,18 +24,21 @@ def startupEvent():
     print("Environment loaded, Database pool initialized, and tables ensured.")
 
 
-def shutdownEvent():
+@app.on_event("shutdown")
+async def shutdownEvent():
     print("Shutting down service...")
     close_pool()
     close_redis()
     print("Database pool and Redis closed.")
 
+
 class MotorcycleWeatherRequest(BaseModel):
     origin: str
     destination: str
 
+
 @app.post("/motorcycleWeather/")
-def motorcycleWeather(request: MotorcycleWeatherRequest):
+async def main(request: MotorcycleWeatherRequest):
     locations = []
     locations.append((request.origin, request.destination))
 

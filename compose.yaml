@@ -1,11 +1,10 @@
 services:
-  motorcycle-weather:
+  motorcycle_weather:
     build:
       context: .
       dockerfile: ./Dockerfile
     env_file:
       - .env
-    working_dir: /motorcycle-weather
     depends_on:
       - db
       - redis
@@ -15,12 +14,30 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./:/motorcycle-weather
-    container_name: motorcycle-weather-app
+      - ./:/Motorcycle_Weather
+    container_name: motorcycle_weather_app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  worker:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    container_name: rq_worker
+    volumes:
+      - ./:/Motorcycle_Weather
+    depends_on:
+      - db
+      - redis
+    command: python worker.py
 
   db:
     image: postgres:16
-    container_name: motorcycle-weather-postgres
+    container_name: postgres
     restart: always
     env_file:
       - .env
@@ -30,8 +47,8 @@ services:
       - pgdata:/var/lib/postgresql/data
 
   redis:
-    image: redis:8
-    container_name: motorcycle-weather-redis
+    image: redis:7
+    container_name: redis
     command: redis-server --requirepass ${REDIS_PASSWORD}
     ports:
       - "6379:6379"
