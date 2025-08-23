@@ -6,7 +6,10 @@ from db import get_conn, release_conn
 from cache import redis_conn
 from coordinates import Point, Step, Coordinates
 from forecast import Forecast
+from rq import Queue
+from tasks import update_gridpoints_to_forecasts, update_coordinate_to_gridpoints
 
+WORKER_QUEUE = Queue(connection=redis_conn)
 
 HEADERS = {
     "Accept": "application/geo+json",
@@ -46,14 +49,14 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
         if expires_at > now:
             # Populate Redis and return
             redis_conn.set(coordinate_key, point.to_str(), ex=int((expires_at - now).total_seconds()))
-            release_conn(conn)
             return point
+
+    release_conn(conn)
 
     # Cache miss fetch from api: https://api.weather.gov/points/{lat},{lon}.
     points_url = f"https://api.weather.gov/points/{truncated_latitude},{truncated_longitude}"
     response = requests.get(points_url, headers=HEADERS)
     response_json = response.json()
-    print(f"response_json type={type(response_json)}")
     response_header_cache_control = response.headers["Cache-Control"]
 
     max_age_hours = 0
@@ -72,30 +75,10 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
         grid_y= response_properties["gridY"]
         point = Point(grid_id, grid_x, grid_y)
 
-        cur.execute("""
-            INSERT INTO coordinate_to_gridpoints(latitude, longitude, grid_id, grid_x, grid_y, expires_at)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (latitude, longitude)
-            DO UPDATE SET grid_id=EXCLUDED.grid_id,
-                          grid_x=EXCLUDED.grid_x,
-                          grid_y=EXCLUDED.grid_y,
-                          expires_at=EXCLUDED.expires_at
-        """, (truncated_latitude, truncated_longitude, grid_id, grid_x, grid_y, expires_at))
-        conn.commit()
+        WORKER_QUEUE.enqueue(update_coordinate_to_gridpoints, (truncated_latitude, truncated_longitude, grid_id, grid_x, grid_y, expires_at))
 
         forecast_url = response_properties["forecast"]
-        cur.execute("""
-            INSERT INTO gridpoints_to_forecast(grid_id, grid_x, grid_y, forecast_url, expires_at)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (grid_id, grid_x, grid_y)
-            DO UPDATE SET grid_id=EXCLUDED.grid_id,
-                          grid_x=EXCLUDED.grid_x,
-                          grid_y=EXCLUDED.grid_y,
-                          forecast_url=EXCLUDED.forecast_url,
-                          expires_at=EXCLUDED.expires_at
-        """, (grid_id, grid_x, grid_y, forecast_url, expires_at))
-        conn.commit()
-        release_conn(conn)
+        WORKER_QUEUE.enqueue(update_gridpoints_to_forecasts, (grid_id, grid_x, grid_y, forecast_url, expires_at))
 
         redis_conn.set(coordinate_key, point.to_str(), ex=int((expires_at - now).total_seconds()))
         redis_conn.set(point.to_str(), forecast_url, ex=int((expires_at - now).total_seconds()))
@@ -103,7 +86,6 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
         return point
     else:
         return Point("", "", "")
-        # return f"Error getting response for the following request to the points endpoint. url={points_url}, request={response.request}, status_code={response.status_code}"
 
 
 def getForecast(coordinate: Coordinates) -> Forecast:
@@ -126,8 +108,10 @@ def getForecast(coordinate: Coordinates) -> Forecast:
         if expires_at > now:
             # Populate Redis and return
             redis_conn.set(gridpoint.to_str(), db_forecast_url, ex=int((expires_at - now).total_seconds()))
-            release_conn(conn)
             forecast_url = db_forecast_url 
+
+    release_conn(conn)
+
 
     if forecast_url:
         forecast_response = requests.get(forecast_url, headers=HEADERS)

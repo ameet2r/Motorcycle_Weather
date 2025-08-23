@@ -3,7 +3,8 @@ from psycopg2 import pool, sql
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-db_pool: pool.SimpleConnectionPool = None  # global pool
+db_pool: pool.SimpleConnectionPool = pool.SimpleConnectionPool(minconn=1, maxconn=10, dsn=DATABASE_URL)
+
 
 def init_db_pool():
     global db_pool
