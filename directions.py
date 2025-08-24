@@ -18,8 +18,9 @@ def haversine(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def computeRoutes(locations: list[tuple], departure_time: datetime = datetime.now(), traffic_aware: bool = False) -> list[Step]:
+def computeRoutes(locations: list[tuple], departure_time: datetime = datetime.now(), traffic_aware: bool = False) -> tuple:
     result = []
+    coords = []
     departure_time_str = departure_time.isoformat() + "Z"
     traffic_aware_str = "TRAFFIC_AWARE" if traffic_aware else ""
     
@@ -75,7 +76,9 @@ def computeRoutes(locations: list[tuple], departure_time: datetime = datetime.no
                             if i > 0:
                                 segment_duration = duration_seconds * (segment_distances[i-1] / total_distance)
                                 step_time += timedelta(seconds=segment_duration)
-                            coordinates_list.append(Coordinates(latitude=str(latitude), longitude=str(longitude), eta=step_time.replace(tzinfo=timezone.utc)))
+                            new_coordinate = Coordinates(latitude=str(latitude), longitude=str(longitude), eta=step_time.replace(tzinfo=timezone.utc))
+                            coordinates_list.append(new_coordinate)
+                            coords.append(new_coordinate)
                         
                         current_time += timedelta(seconds=duration_seconds)
                         new_step = Step(distance_meters, encoded_polyline, coordinates_list)
@@ -83,7 +86,7 @@ def computeRoutes(locations: list[tuple], departure_time: datetime = datetime.no
 
         result = steps
 
-    return result
+    return (result, coords)
 
 
 

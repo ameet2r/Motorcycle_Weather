@@ -125,19 +125,17 @@ def getForecast(coordinate: Coordinates) -> Forecast:
         return Forecast({})
 
 
-def getWeather(route: list[Step]):
+def getWeather(coords: list[Coordinates]):
     # Get points
-    for step in tqdm(route, desc="Getting Points"):
-        for coordinate in step.coordinates:
-            truncated_latitude = truncateCoordinate(coordinate.latitude)
-            truncated_longitude = truncateCoordinate(coordinate.longitude)
-            coordinate.point = getPoints(truncated_latitude, truncated_longitude)
+    for coordinate in tqdm(coords, desc="Getting Points"):
+        truncated_latitude = truncateCoordinate(coordinate.latitude)
+        truncated_longitude = truncateCoordinate(coordinate.longitude)
+        coordinate.point = getPoints(truncated_latitude, truncated_longitude)
 
     # Get Weekly forecast for each point
-    for step in tqdm(route, desc="Getting Forecasts"):
-        for coordinate in step.coordinates:
-            if coordinate.point.is_not_empty:
-                coordinate.forecasts = getForecast(coordinate)
+    for coordinate in tqdm(coords, desc="Getting Forecasts"):
+        if coordinate.point.is_not_empty:
+            coordinate.forecasts = getForecast(coordinate)
 
 
     

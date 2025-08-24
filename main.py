@@ -1,4 +1,5 @@
 from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
 from directions import computeRoutes
 from weather import getWeather
 from gearSuggester import suggestGear
@@ -6,10 +7,10 @@ from tqdm import tqdm
 from db import init_db_pool, create_tables, close_pool
 from cache import close_redis
 from fastapi import FastAPI
-from pydantic import BaseModel
+from coordinates import Coordinates
+from requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
+from constants import MESSAGE_SEPARATOR
 
-
-MESSAGE_SEPARATOR = "=============================================="
 
 app = FastAPI()
 
@@ -32,33 +33,65 @@ async def shutdownEvent():
     print("Database pool and Redis closed.")
 
 
-class MotorcycleWeatherRequest(BaseModel):
-    origin: str
-    destination: str
-
-
-@app.post("/motorcycleWeather/")
-async def main(request: MotorcycleWeatherRequest):
+@app.post("/DirectionsToWeather/")
+async def main(request: DirectionsToWeatherRequest):
     locations = []
     locations.append((request.origin, request.destination))
 
     print(f"Getting weather info for your route from {request.origin} to {request.destination}")
     print(MESSAGE_SEPARATOR)
 
-    # Get directions between two locations
-    route = computeRoutes(locations)
-
-    # Get weather for directions. Directions are saved as set of distances and coordinates.
-    getWeather(route)
-
-    suggested_gear = suggestGear(route)
-    print(f"The following gear is needed for your ride: {suggested_gear}")
-
-    # Build result
     result = {}
-    result["status"] = 200
-    result["suggestedGear"] = suggested_gear
 
+    try:
+        # Get directions between two locations
+        _, coords = computeRoutes(locations)
+
+        # Get weather for directions. Directions are saved as set of distances and coordinates.
+        getWeather(coords)
+
+        suggested_gear = suggestGear(coords)
+        print(f"The following gear is needed for your ride: {suggested_gear}")
+
+        # Build result
+        result["status"] = 200
+        result["suggestedGear"] = suggested_gear
+    except:
+        result["status"] = 500
+
+    print(f"result={result}")
+    return result
+
+
+@app.post("/CoordinatesToWeather/")
+async def coordinatesToWeather(request: CoordsToWeatherRequest):
+    print(f"Getting weather info for {request}")
+    print(MESSAGE_SEPARATOR)
+
+    result = {}
+
+    try:
+        list_of_coordinates = []
+        for element in request.coordinates:
+            coordinate = element["coordinate"]
+            latitude = coordinate["latitude"]
+            longitude = coordinate["longitude"]
+            coord_datetime = datetime.fromisoformat(coordinate["eta"]).astimezone(timezone.utc)
+            list_of_coordinates.append(Coordinates(latitude, longitude, coord_datetime ))
+
+        # Get weather for list of Coordinates
+        getWeather(list_of_coordinates)
+
+        suggested_gear = suggestGear(list_of_coordinates)
+        print(f"The following gear is needed for your ride: {suggested_gear}")
+
+        # Build result
+        result["status"] = 200
+        result["suggestedGear"] = suggested_gear
+    except:
+        result["status"] = 500
+
+    print(f"result={result}")
     return result
 
 
