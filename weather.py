@@ -43,6 +43,7 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
     cur = conn.cursor()
     cur.execute("SELECT grid_id, grid_x, grid_y, expires_at FROM coordinate_to_gridpoints WHERE latitude=%s AND longitude=%s", (truncated_latitude, truncated_longitude))
     row = cur.fetchone()
+    release_conn(conn)
     if row:
         grid_id, grid_x, grid_y, expires_at = row
         point = Point(grid_id, grid_x, grid_y)
@@ -51,7 +52,6 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
             redis_conn.set(coordinate_key, point.to_str(), ex=int((expires_at - now).total_seconds()))
             return point
 
-    release_conn(conn)
 
     # Cache miss fetch from api: https://api.weather.gov/points/{lat},{lon}.
     points_url = f"https://api.weather.gov/points/{truncated_latitude},{truncated_longitude}"
@@ -88,10 +88,9 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
         return Point("", "", "")
 
 
-def getForecast(coordinate: Coordinates) -> Forecast:
+def getForecast(gridpoint: Point) -> Forecast:
     now = datetime.now(timezone.utc)
     forecast_url = ""
-    gridpoint = coordinate.point
 
     # check Redis first
     cached_forecast_url = redis_conn.get(gridpoint.to_str())
@@ -125,21 +124,26 @@ def getForecast(coordinate: Coordinates) -> Forecast:
         return Forecast({})
 
 
-def getWeather(route: list[Step]):
+def getWeather(coords: list[Coordinates]):
+    distinct_points = {}
+
     # Get points
-    for step in tqdm(route, desc="Getting Points"):
-        for coordinate in step.coordinates:
-            truncated_latitude = truncateCoordinate(coordinate.latitude)
-            truncated_longitude = truncateCoordinate(coordinate.longitude)
-            coordinate.point = getPoints(truncated_latitude, truncated_longitude)
+    for coordinate in tqdm(coords, desc="Getting Points"):
+        truncated_latitude = truncateCoordinate(coordinate.latitude)
+        truncated_longitude = truncateCoordinate(coordinate.longitude)
+        coordinate.point = getPoints(truncated_latitude, truncated_longitude)
+        distinct_points[coordinate.point] = None
 
     # Get Weekly forecast for each point
-    for step in tqdm(route, desc="Getting Forecasts"):
-        for coordinate in step.coordinates:
-            if coordinate.point.is_not_empty:
-                coordinate.forecasts = getForecast(coordinate)
+    for point in tqdm(distinct_points, desc="Getting Forecasts"):
+        if point.is_not_empty():
+            forecast = getForecast(point)
+            distinct_points[point] = forecast
 
-
+    for coordinate in coords:
+        if coordinate.point in distinct_points:
+            coordinate.forecasts = distinct_points[coordinate.point]
+            
     
 
 
