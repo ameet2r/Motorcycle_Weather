@@ -35,9 +35,6 @@ async def shutdownEvent():
 
 @app.post("/DirectionsToWeather/")
 async def main(request: DirectionsToWeatherRequest):
-    locations = []
-    locations.append((request.origin, request.destination))
-
     print(f"Getting weather info for your route from {request.origin} to {request.destination}")
     print(MESSAGE_SEPARATOR)
 
@@ -45,13 +42,12 @@ async def main(request: DirectionsToWeatherRequest):
 
     try:
         # Get directions between two locations
-        _, coords = computeRoutes(locations)
+        steps, coords = computeRoutes(request)
 
         # Get weather for directions. Directions are saved as set of distances and coordinates.
         getWeather(coords)
 
         suggested_gear = suggestGear(coords)
-        print(f"The following gear is needed for your ride: {suggested_gear}")
 
         # Build result
         result["status"] = 200
@@ -83,7 +79,6 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
         getWeather(list_of_coordinates)
 
         suggested_gear = suggestGear(list_of_coordinates)
-        print(f"The following gear is needed for your ride: {suggested_gear}")
 
         # Build result
         result["status"] = 200
