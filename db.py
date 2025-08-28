@@ -39,8 +39,9 @@ def create_tables():
             PRIMARY KEY (latitude, longitude)
         )
     """)
+    conn.commit()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS gridpoints_to_forecast(
+        CREATE TABLE IF NOT EXISTS gridpoints_to_forecast_url(
             grid_id TEXT NOT NULL,
             grid_x INT NOT NULL,
             grid_y INT NOT NULL,
@@ -50,4 +51,16 @@ def create_tables():
         )
     """)
     conn.commit()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS gridpoints_to_forecast(
+            grid_id TEXT NOT NULL,
+            grid_x INT NOT NULL,
+            grid_y INT NOT NULL,
+            expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+            forecast JSONB NOT NULL,
+            PRIMARY KEY (grid_id, grid_x, grid_y)
+        )
+    """)
+    conn.commit()
     release_conn(conn)
+
