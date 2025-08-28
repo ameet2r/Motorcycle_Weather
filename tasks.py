@@ -32,8 +32,9 @@ def update_coordinate_to_gridpoints(data):
 
     print(f"[Worker] done updating coordinate_to_gridpoints table")
 
-def update_gridpoints_to_forecasts(data):
-    print(f"[Worker] starting work to update gridpoints_to_forecast table: {data}")
+    
+def update_gridpoints_to_forecasts_url(data):
+    print(f"[Worker] starting work to update gridpoints_to_forecast_url table: {data}")
 
     grid_id = data[0]
     grid_x = data[1]
@@ -46,7 +47,7 @@ def update_gridpoints_to_forecasts(data):
         cur = conn.cursor()
 
         cur.execute("""
-            INSERT INTO gridpoints_to_forecast(grid_id, grid_x, grid_y, forecast_url, expires_at)
+            INSERT INTO gridpoints_to_forecast_url(grid_id, grid_x, grid_y, forecast_url, expires_at)
             VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (grid_id, grid_x, grid_y)
             DO UPDATE SET grid_id=EXCLUDED.grid_id,
@@ -59,7 +60,38 @@ def update_gridpoints_to_forecasts(data):
         conn.commit()
         release_conn(conn)
     except:
+        print(f"[Worker] failed to update gridpoints_to_forecast_url table")
+
+    print(f"[Worker] done updating gridpoints_to_forecast_url table")
+
+
+def update_gridpoints_to_forecasts(data):
+    print(f"[Worker] starting work to update gridpoints_to_forecast table: {data}")
+
+    grid_id = data[0]
+    grid_x = data[1]
+    grid_y = data[2]
+    forecast = data[3] 
+    expires_at = data[4]
+
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO gridpoints_to_forecast(grid_id, grid_x, grid_y, forecast, expires_at)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (grid_id, grid_x, grid_y)
+            DO UPDATE SET grid_id=EXCLUDED.grid_id,
+                          grid_x=EXCLUDED.grid_x,
+                          grid_y=EXCLUDED.grid_y,
+                          forecast=EXCLUDED.forecast,
+                          expires_at=EXCLUDED.expires_at
+        """, (grid_id, grid_x, grid_y, forecast, expires_at))
+
+        conn.commit()
+        release_conn(conn)
+    except:
         print(f"[Worker] failed to update gridpoints_to_forecast table")
 
-    print(f"[Worker] done updating gridpoints_to_forceast table")
-
+    print(f"[Worker] done updating gridpoints_to_forecast table")
