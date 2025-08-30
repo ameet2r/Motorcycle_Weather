@@ -38,10 +38,10 @@ class Coordinates:
             self.point == other.point)
 
     def __hash__(self):
-        return hash((self.latitude, self.longitude, self.eta, self.point))
+        return hash((self.latitude, self.longitude, self.eta, self.point, self.forecasts))
 
     def __repr__(self):
-        return f"Coordinates({self.latitude}, {self.longitude}, {self.eta}, {self.point})"
+        return f"Coordinates({self.latitude}, {self.longitude}, {self.eta}, {self.point}, {self.forecasts})"
 
 
 class Step:
