@@ -1,8 +1,8 @@
 from pydantic import BaseModel
 
 class LatLng(BaseModel):
-    latitude: int
-    longitude: int
+    latitude: str
+    longitude: str
 
 class Location(BaseModel):
     latLng: LatLng
@@ -21,6 +21,12 @@ class DirectionsToWeatherRequest(BaseModel):
     destination: Waypoint
     intermediates: list[Waypoint] = []
     trafficAware: bool = False
+    ignoreEta: bool = False
+
+class CoordinateLocation(BaseModel):
+    latLng: LatLng
+    eta: str|None = None
 
 class CoordsToWeatherRequest(BaseModel):
-    coordinates: list
+    coordinates: list[CoordinateLocation]
+    ignoreEta: bool = False

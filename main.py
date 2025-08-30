@@ -47,7 +47,7 @@ async def main(request: DirectionsToWeatherRequest):
         # Get weather for directions. Directions are saved as set of distances and coordinates.
         getWeather(coords)
 
-        suggested_gear = suggestGear(coords)
+        suggested_gear = suggestGear(coords, request.ignoreEta)
 
         # Build result
         result["status"] = 200
@@ -69,16 +69,18 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
     try:
         list_of_coordinates = []
         for element in request.coordinates:
-            coordinate = element["coordinate"]
-            latitude = coordinate["latitude"]
-            longitude = coordinate["longitude"]
-            coord_datetime = datetime.fromisoformat(coordinate["eta"]).astimezone(timezone.utc)
-            list_of_coordinates.append(Coordinates(latitude, longitude, coord_datetime ))
+            latitude = element.latLng.latitude
+            longitude = element.latLng.longitude
+           
+            coord_eta = None
+            if element.eta:
+                coord_eta = datetime.fromisoformat(element.eta).astimezone(timezone.utc)
+            list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta))
 
         # Get weather for list of Coordinates
         getWeather(list_of_coordinates)
 
-        suggested_gear = suggestGear(list_of_coordinates)
+        suggested_gear = suggestGear(list_of_coordinates, request.ignoreEta)
 
         # Build result
         result["status"] = 200
