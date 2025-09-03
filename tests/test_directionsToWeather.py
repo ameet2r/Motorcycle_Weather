@@ -70,7 +70,48 @@ def test_only_destination_no_origin():
     result = Response(response.json())
 
     assert result.status_code == 400
-    
 
-#TODO: Test placeID
-#TODO: Test latLng
+
+def test_origin_and_destination_are_latLng():
+    data = {
+        "origin": {
+            "location": {
+                "latLng": {
+                  "latitude": "37.42292",
+                  "longitude": "-122.08532",
+                }
+          }
+       },
+      "destination": {
+            "location": {
+                "latLng": {
+                  "latitude": "37.42913",
+                  "longitude": "-122.16919",
+                }
+          }
+        }
+    }
+    response = client.post("/DirectionsToWeather", headers=HEADERS, json=data)
+    result = Response(response.json())
+
+    assert response.status_code == 200
+    assert result.status_code == 200
+    assert result.suggested_gear != None
+
+
+def test_placeId():
+    data = {
+        "origin": {
+            "placeId": "ChIJLxQbczcVkFQRdbUrsaQMltc"
+       },
+      "destination": {
+            "placeId": "ChIJZaBVEIhskFQRuztRGyY4rtY"
+        }
+    }
+    response = client.post("/DirectionsToWeather", headers=HEADERS, json=data)
+    result = Response(response.json())
+
+    assert response.status_code == 200
+    assert result.status_code == 200
+    assert result.suggested_gear != None
+

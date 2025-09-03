@@ -126,7 +126,17 @@ def test_latLng_without_eta_and_ignoreEta_true():
     assert result.status_code == 200
     assert result.suggested_gear != None
 
-#TODO: empty coordinates list
+
+def test_empty_coordinates_list():
+    data = {
+        "coordinates": []
+    }
+    response = client.post("/CoordinatesToWeather", headers=HEADERS, json=data)
+    result = Response(response.json())
+
+    # assert response.status_code == 200
+    assert result.status_code == 400
+    assert result.suggested_gear == None
 
 
 
