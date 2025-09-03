@@ -40,20 +40,29 @@ async def main(request: DirectionsToWeatherRequest):
 
     result = {}
 
+    if not (request.origin.placeId or request.origin.address or request.origin.location) or not (request.destination.placeId or request.destination.address or request.destination.location):
+        result["status"] = 400
+        result["suggestedGear"] = None
+        return result
+
     try:
         # Get directions between two locations
         steps, coords = computeRoutes(request)
+        print(f"coords after route computed={coords}, steps after route computed={steps}")
 
         # Get weather for directions. Directions are saved as set of distances and coordinates.
         getWeather(coords)
+        print(f"list_of_coordinates after weather retrieved={coords}, and request.ignoreEta={request.ignoreEta}")
 
         suggested_gear = suggestGear(coords, request.ignoreEta)
+        print(f"suggested_gear={suggested_gear}")
 
         # Build result
         result["status"] = 200
         result["suggestedGear"] = suggested_gear
     except:
         result["status"] = 500
+        result["suggestedGear"] = None
 
     print(f"result={result}")
     return result
@@ -65,6 +74,10 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
     print(MESSAGE_SEPARATOR)
 
     result = {}
+    if len(request.coordinates) == 0:
+        result["status"] = 400
+        result["suggestedGear"] = None
+        return result
 
     try:
         list_of_coordinates = []
@@ -76,11 +89,14 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
             if element.eta:
                 coord_eta = datetime.fromisoformat(element.eta).astimezone(timezone.utc)
             list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta))
+        print(f"list_of_coordinates after list creation={list_of_coordinates}")
 
         # Get weather for list of Coordinates
         getWeather(list_of_coordinates)
+        print(f"list_of_coordinates after weather retrieved={list_of_coordinates}, and request.ignoreEta={request.ignoreEta}")
 
         suggested_gear = suggestGear(list_of_coordinates, request.ignoreEta)
+        print(f"suggested_gear={suggested_gear}")
 
         # Build result
         result["status"] = 200
