@@ -4,8 +4,8 @@ import os
 import polyline
 from tqdm import tqdm
 from datetime import datetime, timedelta, timezone
-from coordinates import Step, Coordinates
-from requestTypes import DirectionsToWeatherRequest, Waypoint
+from app.coordinates import Step, Coordinates
+from app.requestTypes import DirectionsToWeatherRequest, Waypoint
 
 
 # Function to compute distance (meters) between two lat/lon points

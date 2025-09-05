@@ -1,15 +1,15 @@
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
-from directions import computeRoutes
-from weather import getWeather
-from gearSuggester import suggestGear
+from app.directions import computeRoutes
+from app.weather import getWeather
+from app.gearSuggester import suggestGear
 from tqdm import tqdm
-from db import init_db_pool, create_tables, close_pool
-from cache import close_redis
+from app.db import init_db_pool, create_tables, close_pool
+from app.cache import close_redis
 from fastapi import FastAPI
-from coordinates import Coordinates
-from requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
-from constants import MESSAGE_SEPARATOR
+from app.coordinates import Coordinates
+from app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
+from app.constants import MESSAGE_SEPARATOR
 
 
 app = FastAPI()

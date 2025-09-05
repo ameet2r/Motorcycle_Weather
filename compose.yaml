@@ -1,8 +1,8 @@
 services:
   motorcycle_weather:
     build:
-      context: .
-      dockerfile: ./Dockerfile
+      context: .           # Project root
+      dockerfile: Dockerfile
     env_file:
       - .env
     depends_on:
@@ -14,26 +14,27 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./:/Motorcycle_Weather
+      - ./server:/Motorcycle_Weather/server
     container_name: motorcycle_weather_app
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   worker:
     build:
       context: .
-      dockerfile: ./Dockerfile
+      dockerfile: Dockerfile
     env_file:
       - .env
     environment:
+      PYTHONPATH: /Motorcycle_Weather/server
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     container_name: rq_worker
     volumes:
-      - ./:/Motorcycle_Weather
+      - ./server:/Motorcycle_Weather/server
     depends_on:
       - db
       - redis
-    command: python worker.py
+    command: python -m app.worker
 
   db:
     image: postgres:16

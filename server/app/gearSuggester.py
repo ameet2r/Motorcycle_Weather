@@ -1,5 +1,5 @@
 from tqdm import tqdm
-from coordinates import Step, Coordinates
+from app.coordinates import Step, Coordinates
 from collections import defaultdict
 
 

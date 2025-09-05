@@ -1,4 +1,4 @@
-from db import get_conn, release_conn
+from app.db import get_conn, release_conn
 
 def update_coordinate_to_gridpoints(data):
     print(f"[Worker] starting work to update coordinate_to_gridpoints table: {data}")
