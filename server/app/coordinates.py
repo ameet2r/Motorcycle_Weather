@@ -1,4 +1,4 @@
-from forecast import Forecast
+from app.forecast import Forecast
 
 class Point:
     def __init__(self, grid_id: str, grid_x: str, grid_y: str):

@@ -1,4 +1,4 @@
-from cache import redis_conn
+from app.cache import redis_conn
 from rq import Worker, Queue
 
 listen = ["default"]

@@ -2,14 +2,14 @@ import requests
 import os
 from tqdm import tqdm
 from datetime import datetime, timedelta, timezone
-from db import get_conn, release_conn
-from cache import redis_conn
-from coordinates import Point, Step, Coordinates
-from forecast import Forecast
+from app.db import get_conn, release_conn
+from app.cache import redis_conn
+from app.coordinates import Point, Step, Coordinates
+from app.forecast import Forecast
 from rq import Queue
-from tasks import update_gridpoints_to_forecasts_url, update_gridpoints_to_forecasts, update_coordinate_to_gridpoints
+from app.tasks import update_gridpoints_to_forecasts_url, update_gridpoints_to_forecasts, update_coordinate_to_gridpoints
 import json
-from constants import REDIS_FORECAST_URL_KEY_SUFFIX, REDIS_FORECAST_KEY_SUFFIX
+from app.constants import REDIS_FORECAST_URL_KEY_SUFFIX, REDIS_FORECAST_KEY_SUFFIX
 
 WORKER_QUEUE = Queue(connection=redis_conn)
 
@@ -30,7 +30,7 @@ def truncateCoordinate(coordinate: str, max_decimal_places: int = 4) -> str:
         return coordinate
 
 
-def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
+def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point|None:
     coordinate_key = f"{truncated_latitude}:{truncated_longitude}"
     now = datetime.now(timezone.utc)
 
