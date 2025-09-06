@@ -26,7 +26,7 @@ def test_latLng_with_eta_and_ignoreEta_true():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 
 def test_latLng_with_eta_and_ignoreEta_false():
@@ -47,7 +47,7 @@ def test_latLng_with_eta_and_ignoreEta_false():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 def test_latLng_with_eta_and_no_ignoreEta():
     data = {
@@ -66,7 +66,7 @@ def test_latLng_with_eta_and_no_ignoreEta():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 def test_latLng_without_eta_and_no_ignoreEta():
     data = {
@@ -84,7 +84,7 @@ def test_latLng_without_eta_and_no_ignoreEta():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 
 def test_latLng_without_eta_and_ignoreEta_false():
@@ -104,7 +104,7 @@ def test_latLng_without_eta_and_ignoreEta_false():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 
 def test_latLng_without_eta_and_ignoreEta_true():
@@ -124,7 +124,7 @@ def test_latLng_without_eta_and_ignoreEta_true():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 
 def test_empty_coordinates_list():
@@ -136,7 +136,7 @@ def test_empty_coordinates_list():
 
     # assert response.status_code == 200
     assert result.status_code == 400
-    assert result.suggested_gear == None
+    assert result.coordinates_to_forecasts_map == None
 
 
 

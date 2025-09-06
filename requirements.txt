@@ -4,7 +4,7 @@ polyline
 tqdm
 psycopg2-binary
 redis
-fastapi
+fastapi[all]
 uvicorn[standard]
 pydantic
 rq

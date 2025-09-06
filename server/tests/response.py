@@ -2,7 +2,7 @@ class Response:
     def __init__(self, response: dict):
         if response:
             self.status_code = response["status"]
-            self.suggested_gear = response["suggestedGear"]
+            self.coordinates_to_forecasts_map = response["coordinates_to_forecasts_map"]
         else:
             self.status_code = None
-            self.suggested_gear = None
+            self.coordinates_to_forecasts_map = None

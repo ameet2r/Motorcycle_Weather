@@ -19,7 +19,7 @@ def test_origin_and_destination_and_intermediates_exist():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 def test_origin_and_destination_and_intermediates_ignoreEta_true_exist():
     data = {
@@ -33,7 +33,7 @@ def test_origin_and_destination_and_intermediates_ignoreEta_true_exist():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 
 def test_origin_and_destinatoin_exist():
@@ -46,7 +46,7 @@ def test_origin_and_destinatoin_exist():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
     
 
 def test_only_origin_no_destination():
@@ -96,7 +96,7 @@ def test_origin_and_destination_are_latLng():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 
 
 def test_placeId():
@@ -113,5 +113,5 @@ def test_placeId():
 
     assert response.status_code == 200
     assert result.status_code == 200
-    assert result.suggested_gear != None
+    assert result.coordinates_to_forecasts_map != None
 

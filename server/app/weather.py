@@ -10,6 +10,7 @@ from rq import Queue
 from app.tasks import update_gridpoints_to_forecasts_url, update_gridpoints_to_forecasts, update_coordinate_to_gridpoints
 import json
 from app.constants import REDIS_FORECAST_URL_KEY_SUFFIX, REDIS_FORECAST_KEY_SUFFIX
+from collections import defaultdict
 
 WORKER_QUEUE = Queue(connection=redis_conn)
 
@@ -30,7 +31,7 @@ def truncateCoordinate(coordinate: str, max_decimal_places: int = 4) -> str:
         return coordinate
 
 
-def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point|None:
+def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
     coordinate_key = f"{truncated_latitude}:{truncated_longitude}"
     now = datetime.now(timezone.utc)
 
@@ -60,7 +61,6 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point|None:
         release_conn(conn)
         if point.is_not_empty():
             return point
-
 
     # Cache miss fetch from api: https://api.weather.gov/points/{lat},{lon}.
     try:
@@ -96,7 +96,7 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point|None:
                 return point
             except:
                 print(f"Failed to send update to Redis and DB with the following data: coordinate_key={coordinate_key}, point.to_str()={point.to_str()}, point.to_str()+REDIS_FORECAST_URL_KEY_SUFFIX={point.to_str()+REDIS_FORECAST_URL_KEY_SUFFIX}, forecast_url={forecast_url}")
-                
+                return Point("", "", "")
         else:
             return Point("", "", "")
     except:
@@ -185,6 +185,24 @@ def getForecast(gridpoint: Point) -> Forecast|None:
     except:
         print(f"Error getting forecast")
         return Forecast({})
+
+
+def filterWeatherData(coords: list[Coordinates], ignoreEta: bool = False) -> dict:
+    coordinate_to_forecasts_map = defaultdict(list)
+
+    for coordinate in tqdm(coords, desc="Filtering Forecasts"):
+        #If ignoreEta is true or there is no eta, look at all periods of the forecast 
+        if ignoreEta or not coordinate.eta:
+            coordinate_key = f"{coordinate.latitude}:{coordinate.longitude}"
+            coordinate_to_forecasts_map[coordinate_key].append(coordinate.forecasts)
+        # If there is an eta just get the forecast period for that eta
+        else:
+            filtered_period = coordinate.forecasts.filterPeriods(coordinate.eta)
+            if filtered_period:
+                coordinate_key = f"{coordinate.latitude}:{coordinate.longitude}"
+                coordinate_to_forecasts_map[coordinate_key].append(filtered_period)
+
+    return coordinate_to_forecasts_map
 
 
 def getWeather(coords: list[Coordinates]):
