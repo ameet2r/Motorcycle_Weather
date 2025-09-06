@@ -1,18 +1,31 @@
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from app.directions import computeRoutes
-from app.weather import getWeather
-from app.gearSuggester import suggestGear
+from app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
 from app.db import init_db_pool, create_tables, close_pool
 from app.cache import close_redis
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.coordinates import Coordinates
 from app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
 from app.constants import MESSAGE_SEPARATOR
 
 
 app = FastAPI()
+
+# Allow requests from the following locations
+origins = [
+    "http://localhost:5173"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins, # can be ["*"] for dev
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.on_event("startup")
 async def startupEvent():
@@ -42,7 +55,7 @@ async def main(request: DirectionsToWeatherRequest):
 
     if not (request.origin.placeId or request.origin.address or request.origin.location) or not (request.destination.placeId or request.destination.address or request.destination.location):
         result["status"] = 400
-        result["suggestedGear"] = None
+        result["coordinates_to_forecasts_map"] = None
         return result
 
     try:
@@ -54,15 +67,16 @@ async def main(request: DirectionsToWeatherRequest):
         getWeather(coords)
         print(f"list_of_coordinates after weather retrieved={coords}, and request.ignoreEta={request.ignoreEta}")
 
-        suggested_gear = suggestGear(coords, request.ignoreEta)
-        print(f"suggested_gear={suggested_gear}")
+        # Filter forecasts
+        coordinates_to_forecasts_map = filterWeatherData(coords, request.ignoreEta)
+        print(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
         result["status"] = 200
-        result["suggestedGear"] = suggested_gear
+        result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
     except:
         result["status"] = 500
-        result["suggestedGear"] = None
+        result["coordinates_to_forecasts_map"] = None
 
     print(f"result={result}")
     return result
@@ -76,7 +90,7 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
     result = {}
     if len(request.coordinates) == 0:
         result["status"] = 400
-        result["suggestedGear"] = None
+        result["coordinates_to_forecasts_map"] = None
         return result
 
     try:
@@ -95,14 +109,16 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
         getWeather(list_of_coordinates)
         print(f"list_of_coordinates after weather retrieved={list_of_coordinates}, and request.ignoreEta={request.ignoreEta}")
 
-        suggested_gear = suggestGear(list_of_coordinates, request.ignoreEta)
-        print(f"suggested_gear={suggested_gear}")
+        # Filter forecasts
+        coordinates_to_forecasts_map = filterWeatherData(list_of_coordinates, request.ignoreEta)
+        print(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
         result["status"] = 200
-        result["suggestedGear"] = suggested_gear
+        result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
     except:
         result["status"] = 500
+        result["coordinates_to_forecasts_map"] = None
 
     print(f"result={result}")
     return result
