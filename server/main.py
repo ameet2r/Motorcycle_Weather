@@ -46,7 +46,6 @@ async def shutdownEvent():
     print("Database pool and Redis closed.")
 
 
-@app.post("/DirectionsToWeather/")
 async def main(request: DirectionsToWeatherRequest):
     print(f"Getting weather info for your route from {request.origin} to {request.destination}")
     print(MESSAGE_SEPARATOR)
