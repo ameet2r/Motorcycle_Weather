@@ -5,7 +5,7 @@ from app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
 from app.db import init_db_pool, create_tables, close_pool
 from app.cache import close_redis
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.coordinates import Coordinates
 from app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
@@ -53,9 +53,7 @@ async def main(request: DirectionsToWeatherRequest):
     result = {}
 
     if not (request.origin.placeId or request.origin.address or request.origin.location) or not (request.destination.placeId or request.destination.address or request.destination.location):
-        result["status"] = 400
-        result["coordinates_to_forecasts_map"] = None
-        return result
+        raise HTTPException(status_code=400, detail="No locations provided")
 
     try:
         # Get directions between two locations
@@ -71,11 +69,9 @@ async def main(request: DirectionsToWeatherRequest):
         print(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
-        result["status"] = 200
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
     except:
-        result["status"] = 500
-        result["coordinates_to_forecasts_map"] = None
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     print(f"result={result}")
     return result
@@ -88,9 +84,7 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
 
     result = {}
     if len(request.coordinates) == 0:
-        result["status"] = 400
-        result["coordinates_to_forecasts_map"] = None
-        return result
+        raise HTTPException(status_code=400, detail="No coordinates provided")
 
     try:
         list_of_coordinates = []
@@ -113,11 +107,9 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
         print(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
-        result["status"] = 200
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
     except:
-        result["status"] = 500
-        result["coordinates_to_forecasts_map"] = None
+        raise HTTPException(status_code=500, detail="Internal server error")
 
     print(f"result={result}")
     return result
