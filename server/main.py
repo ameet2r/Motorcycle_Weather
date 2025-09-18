@@ -10,18 +10,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.coordinates import Coordinates
 from app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
 from app.constants import MESSAGE_SEPARATOR
+import os
 
 
 app = FastAPI()
 
 # Allow requests from the following locations
-origins = [
-    "http://localhost:5173"
-]
+origins = os.getenv("CORS_ORIGINS")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins, # can be ["*"] for dev
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
