@@ -25,7 +25,6 @@ def test_latLng_with_eta_and_ignoreEta_true():
     result = Response(response.json())
 
     assert response.status_code == 200
-    assert result.status_code == 200
     assert result.coordinates_to_forecasts_map != None
 
 
@@ -46,7 +45,6 @@ def test_latLng_with_eta_and_ignoreEta_false():
     result = Response(response.json())
 
     assert response.status_code == 200
-    assert result.status_code == 200
     assert result.coordinates_to_forecasts_map != None
 
 def test_latLng_with_eta_and_no_ignoreEta():
@@ -65,7 +63,6 @@ def test_latLng_with_eta_and_no_ignoreEta():
     result = Response(response.json())
 
     assert response.status_code == 200
-    assert result.status_code == 200
     assert result.coordinates_to_forecasts_map != None
 
 def test_latLng_without_eta_and_no_ignoreEta():
@@ -83,7 +80,6 @@ def test_latLng_without_eta_and_no_ignoreEta():
     result = Response(response.json())
 
     assert response.status_code == 200
-    assert result.status_code == 200
     assert result.coordinates_to_forecasts_map != None
 
 
@@ -103,7 +99,6 @@ def test_latLng_without_eta_and_ignoreEta_false():
     result = Response(response.json())
 
     assert response.status_code == 200
-    assert result.status_code == 200
     assert result.coordinates_to_forecasts_map != None
 
 
@@ -123,7 +118,6 @@ def test_latLng_without_eta_and_ignoreEta_true():
     result = Response(response.json())
 
     assert response.status_code == 200
-    assert result.status_code == 200
     assert result.coordinates_to_forecasts_map != None
 
 
@@ -132,12 +126,88 @@ def test_empty_coordinates_list():
         "coordinates": []
     }
     response = client.post("/CoordinatesToWeather", headers=HEADERS, json=data)
+    response_json = response.json()
+
+
+    assert response.status_code == 400
+    assert response_json["detail"] == "No coordinates provided"
+
+
+def test_coordinates_inside_us():
+    data = {
+        "coordinates": [
+            {
+                "latLng": {
+                    "latitude": "37.4258",  # Mountain View, CA
+                    "longitude": "-122.09865",
+                }
+            },
+            {
+                "latLng": {
+                    "latitude": "40.7128",  # New York, NY
+                    "longitude": "-74.0060",
+                }
+            },
+            {
+                "latLng": {
+                    "latitude": "21.3069",  # Honolulu, HI
+                    "longitude": "-157.8583",
+                }
+            },
+            {
+                "latLng": {
+                    "latitude": "64.2008",  # Fairbanks, AK
+                    "longitude": "-149.4937",
+                }
+            },
+            {
+                "latLng": {
+                    "latitude": "18.2208",  # Puerto Rico
+                    "longitude": "-66.5901",
+                }
+            },
+        ]
+    }
+
+    response = client.post("/CoordinatesToWeather", headers=HEADERS, json=data)
     result = Response(response.json())
 
-    # assert response.status_code == 200
-    assert result.status_code == 400
-    assert result.coordinates_to_forecasts_map == None
+    assert response.status_code == 200
+    assert result.coordinates_to_forecasts_map is not None
 
 
+def test_coordinates_outside_us():
+    data = {
+        "coordinates": [
+            {
+                "latLng": {
+                    "latitude": "51.5074",  # London
+                    "longitude": "-0.1278",
+                }
+            },
+            {
+                "latLng": {
+                    "latitude": "-33.8688",  # Sydney
+                    "longitude": "151.2093",
+                }
+            },
+            {
+                "latLng": {
+                    "latitude": "35.6895",  # Tokyo
+                    "longitude": "139.6917",
+                }
+            },
+        ]
+    }
+
+    response = client.post("/CoordinatesToWeather", headers=HEADERS, json=data)
+    response_json = response.json()
+
+    # Extract all error messages
+    messages = [item['msg'] for item in response_json['detail']]
+
+    # Make sure error messages for each given latitude/longitude pair mention that coordinates must be within the US
+    for msg in messages:
+        assert "Coordinates must be within the United States" in msg
 
 
