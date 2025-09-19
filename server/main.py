@@ -16,6 +16,15 @@ import sys
 import tempfile
 import atexit
 
+# DEBUG: Add diagnostic logging for import issues
+print(f"DEBUG: Current working directory: {os.getcwd()}")
+print(f"DEBUG: Python path: {sys.path}")
+print(f"DEBUG: Contents of current directory: {os.listdir('.')}")
+try:
+    print(f"DEBUG: Contents of server directory: {os.listdir('server') if os.path.exists('server') else 'server directory not found'}")
+except Exception as e:
+    print(f"DEBUG: Error listing server directory: {e}")
+
 
 # Configure logging for production
 def setup_logging():
