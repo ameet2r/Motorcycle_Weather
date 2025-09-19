@@ -33,6 +33,10 @@ def setup_logging():
         # Reduce noise from external libraries
         logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
         logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("google.auth").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+        logging.getLogger("absl").setLevel(logging.ERROR)
+        logging.getLogger("google.cloud").setLevel(logging.WARNING)
     else:
         logging.basicConfig(level=logging.DEBUG)
 
