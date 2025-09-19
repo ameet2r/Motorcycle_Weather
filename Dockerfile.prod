@@ -34,9 +34,8 @@ RUN adduser \
 COPY requirements.txt .
 
 # Download dependencies as a separate step to take advantage of Docker's caching.
-# Use Railway-compatible cache mount syntax
-RUN --mount=type=cache,id=pip-cache,target=/root/.cache/pip \
-    python -m pip install --no-cache-dir -r requirements.txt
+# Railway-compatible approach without cache mounts
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
 # Copy the source code into the container.
 COPY server/ ./server/
