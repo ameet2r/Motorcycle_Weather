@@ -116,16 +116,18 @@ class FirestoreService:
         doc_id = self._create_gridpoint_doc_id(grid_id, grid_x, grid_y)
         doc_ref = self.db.collection(self.forecasts_collection).document(doc_id)
         doc = doc_ref.get()
-        
+
         if doc.exists:
             data = doc.to_dict()
             # Check if expired
             if not self._is_expired(data.get('expiresAt')):
-                return data.get('forecast')
+                forecast_json = data.get('forecast')
+                if forecast_json:
+                    return json.loads(forecast_json)
             else:
                 # Delete expired document
                 doc_ref.delete()
-        
+
         return None
     
     def set_gridpoints_to_forecast(self, grid_id: str, grid_x: str, grid_y: str,
@@ -133,15 +135,15 @@ class FirestoreService:
         """Store forecast data for gridpoint"""
         doc_id = self._create_gridpoint_doc_id(grid_id, grid_x, grid_y)
         doc_ref = self.db.collection(self.forecasts_collection).document(doc_id)
-        
+
         data = {
             'gridId': grid_id,
             'gridX': int(grid_x),
             'gridY': int(grid_y),
-            'forecast': forecast,
+            'forecast': json.dumps(forecast),
             'expiresAt': expires_at
         }
-        
+
         doc_ref.set(data)
     
     # Utility methods
