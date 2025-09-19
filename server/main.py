@@ -160,21 +160,51 @@ async def main(request: DirectionsToWeatherRequest):
 async def health_check():
     """Health check endpoint for Railway monitoring"""
     try:
-        # Test Firestore connection
-        from app.firestore_service import get_firestore_client
-        db = get_firestore_client()
-        # Simple test to verify Firestore is accessible
-        db.collection('health_check').limit(1).get()
+        # Log health check attempt
+        logger.info("Health check requested")
         
-        return {
+        # Basic health check response
+        health_response = {
             "status": "healthy",
             "service": "Motorcycle Weather API",
             "environment": os.getenv("ENVIRONMENT", "development"),
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
+        
+        # Check if credentials are properly set
+        creds_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
+        
+        logger.info(f"GOOGLE_APPLICATION_CREDENTIALS: {'SET' if creds_path else 'NOT SET'}")
+        logger.info(f"GOOGLE_CLOUD_PROJECT: {'SET' if project_id else 'NOT SET'}")
+        
+        if creds_path:
+            logger.info(f"Credentials file exists: {os.path.exists(creds_path)}")
+        
+        # Try to test Firestore connection, but don't fail health check if it fails
+        try:
+            from app.firestore_service import get_firestore_client
+            logger.info("Getting Firestore client...")
+            db = get_firestore_client()
+            logger.info("Firestore client obtained, testing connection...")
+            
+            # Simple test to verify Firestore is accessible
+            result = db.collection('health_check').limit(1).get()
+            logger.info(f"Firestore connection test successful, got {len(list(result))} documents")
+            health_response["firestore"] = "connected"
+            
+        except Exception as firestore_error:
+            logger.warning(f"Firestore connection failed during health check: {str(firestore_error)}")
+            health_response["firestore"] = f"error: {str(firestore_error)}"
+            # Don't fail the health check for Firestore issues - the app can still serve requests
+        
+        logger.info("Health check completed successfully")
+        return health_response
+        
     except Exception as e:
+        logger.error(f"Health check failed: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=503, 
+            status_code=503,
             detail=f"Service unhealthy: {str(e)}"
         )
 

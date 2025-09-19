@@ -5,43 +5,35 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 from typing import Optional, Dict, Any
 import json
 
-# Initialize Firestore client
+# Global client instance - will be initialized lazily
+_db_client = None
+
 def get_firestore_client():
-    """Get Firestore client instance"""
+    """Get Firestore client instance with lazy initialization"""
+    global _db_client
+    
+    if _db_client is not None:
+        return _db_client
+    
     project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
     if not project_id:
-        raise ValueError("GOOGLE_CLOUD_PROJECT environment variable not set")
-    
-    # Railway production: Use JSON content from environment variable
-    creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
-    if creds_json:
-        import tempfile
-        import json
-        
-        # Validate JSON format
-        try:
-            json.loads(creds_json)
-        except json.JSONDecodeError:
-            raise ValueError("Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON")
-        
-        # Create temporary file with service account credentials
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-            f.write(creds_json)
-            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
-    
-    # Local development: Use existing file path
-    # (GOOGLE_APPLICATION_CREDENTIALS already set in .env)
-    
-    return firestore.Client(project=project_id)
-
-# Global client instance
-db = get_firestore_client()
+        raise ValueError("GOOGLE_CLOUD_PROJECT environment variable not set")    
+    _db_client = firestore.Client(project=project_id)
+    return _db_client
 
 class FirestoreService:
     """Service class for Firestore operations replacing PostgreSQL and Redis functionality"""
     
     def __init__(self):
-        self.db = db
+        # Use lazy initialization - get client when needed
+        self._db = None
+    
+    @property
+    def db(self):
+        """Lazy-loaded database client"""
+        if self._db is None:
+            self._db = get_firestore_client()
+        return self._db
         self.coordinates_collection = "coordinates"
         self.gridpoints_collection = "gridpoints" 
         self.forecasts_collection = "forecasts"
