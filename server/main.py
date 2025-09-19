@@ -1,14 +1,14 @@
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
-from app.directions import computeRoutes
-from app.weather import getWeather, filterWeatherData
+from .app.directions import computeRoutes
+from .app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
-from app.firestore_service import cleanup_expired_documents
+from .app.firestore_service import cleanup_expired_documents
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from app.coordinates import Coordinates
-from app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
-from app.constants import MESSAGE_SEPARATOR
+from .app.coordinates import Coordinates
+from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
+from .app.constants import MESSAGE_SEPARATOR
 import os
 import logging
 import signal
@@ -195,7 +195,7 @@ async def health_check():
         
         # Try to test Firestore connection, but don't fail health check if it fails
         try:
-            from app.firestore_service import get_firestore_client
+            from .app.firestore_service import get_firestore_client
             logger.info("Getting Firestore client...")
             db = get_firestore_client()
             logger.info("Firestore client obtained, testing connection...")

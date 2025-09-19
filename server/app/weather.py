@@ -2,9 +2,9 @@ import requests
 import os
 from tqdm import tqdm
 from datetime import datetime, timedelta, timezone
-from app.coordinates import Point, Step, Coordinates
-from app.forecast import Forecast
-from app.firestore_service import (
+from .coordinates import Point, Step, Coordinates
+from .forecast import Forecast
+from .firestore_service import (
     get_coordinate_to_gridpoints,
     set_coordinate_to_gridpoints,
     get_gridpoints_to_forecast_url,
