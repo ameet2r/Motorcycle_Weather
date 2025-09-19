@@ -12,6 +12,26 @@ def get_firestore_client():
     if not project_id:
         raise ValueError("GOOGLE_CLOUD_PROJECT environment variable not set")
     
+    # Railway production: Use JSON content from environment variable
+    creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if creds_json:
+        import tempfile
+        import json
+        
+        # Validate JSON format
+        try:
+            json.loads(creds_json)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        
+        # Create temporary file with service account credentials
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            f.write(creds_json)
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
+    
+    # Local development: Use existing file path
+    # (GOOGLE_APPLICATION_CREDENTIALS already set in .env)
+    
     return firestore.Client(project=project_id)
 
 # Global client instance

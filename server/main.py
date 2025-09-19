@@ -10,9 +10,67 @@ from app.coordinates import Coordinates
 from app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
 from app.constants import MESSAGE_SEPARATOR
 import os
+import logging
+import signal
+import sys
+import tempfile
+import atexit
 
 
-app = FastAPI()
+# Configure logging for production
+def setup_logging():
+    """Configure logging based on environment"""
+    environment = os.getenv("ENVIRONMENT", "development")
+    
+    if environment == "production":
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(sys.stdout)
+            ]
+        )
+        # Reduce noise from external libraries
+        logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+    else:
+        logging.basicConfig(level=logging.DEBUG)
+
+# Global variable to track temporary credential files for cleanup
+temp_credential_files = []
+
+def cleanup_temp_files():
+    """Clean up temporary credential files"""
+    for temp_file in temp_credential_files:
+        try:
+            if os.path.exists(temp_file):
+                os.unlink(temp_file)
+                logging.info(f"Cleaned up temporary credential file: {temp_file}")
+        except Exception as e:
+            logging.warning(f"Could not clean up temporary file {temp_file}: {e}")
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    logging.info(f"Received signal {signum}, shutting down gracefully...")
+    cleanup_temp_files()
+    sys.exit(0)
+
+# Register signal handlers for graceful shutdown
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+# Register cleanup function to run on exit
+atexit.register(cleanup_temp_files)
+
+# Setup logging
+setup_logging()
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Motorcycle Weather API",
+    description="Weather forecasting service for motorcycle routes",
+    version="1.0.0"
+)
 
 # Allow requests from the following locations
 origins = os.getenv("CORS_ORIGINS")
@@ -27,29 +85,50 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startupEvent():
-    print("Welcome to Motorcycle Weather")
-    print(MESSAGE_SEPARATOR)
+    logger.info("Welcome to Motorcycle Weather API")
 
     load_dotenv()
-    print("Environment loaded, Firestore client initialized.")
+    
+    # Handle Railway credential setup
+    creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
+    if creds_json:
+        try:
+            import json
+            # Validate JSON format
+            json.loads(creds_json)
+            
+            # Create temporary file with service account credentials
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                f.write(creds_json)
+                temp_credential_files.append(f.name)
+                os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = f.name
+                logger.info("Railway credentials configured successfully")
+        except json.JSONDecodeError:
+            logger.error("Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON")
+            raise ValueError("Invalid JSON in GOOGLE_APPLICATION_CREDENTIALS_JSON")
+        except Exception as e:
+            logger.error(f"Failed to setup Railway credentials: {e}")
+            raise
+    
+    logger.info("Environment loaded, Firestore client initialized.")
     
     # Optional: Clean up expired documents on startup
     try:
         cleanup_expired_documents()
-        print("Cleaned up expired documents from Firestore.")
+        logger.info("Cleaned up expired documents from Firestore.")
     except Exception as e:
-        print(f"Warning: Could not clean up expired documents: {e}")
+        logger.warning(f"Could not clean up expired documents: {e}")
 
 
 @app.on_event("shutdown")
 async def shutdownEvent():
-    print("Shutting down service...")
-    print("Firestore connections closed automatically.")
+    logger.info("Shutting down service...")
+    cleanup_temp_files()
+    logger.info("Firestore connections closed automatically.")
 
 
 async def main(request: DirectionsToWeatherRequest):
-    print(f"Getting weather info for your route from {request.origin} to {request.destination}")
-    print(MESSAGE_SEPARATOR)
+    logger.info(f"Getting weather info for your route from {request.origin} to {request.destination}")
 
     result = {}
 
@@ -59,29 +138,49 @@ async def main(request: DirectionsToWeatherRequest):
     try:
         # Get directions between two locations
         steps, coords = computeRoutes(request)
-        print(f"coords after route computed={coords}, steps after route computed={steps}")
+        logger.info(f"coords after route computed={coords}, steps after route computed={steps}")
 
         # Get weather for directions. Directions are saved as set of distances and coordinates.
         getWeather(coords)
-        print(f"list_of_coordinates after weather retrieved={coords}, and request.ignoreEta={request.ignoreEta}")
+        logger.info(f"list_of_coordinates after weather retrieved={coords}, and request.ignoreEta={request.ignoreEta}")
 
         # Filter forecasts
         coordinates_to_forecasts_map = filterWeatherData(coords, request.ignoreEta)
-        print(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
+        logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
     except:
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    print(f"result={result}")
+    logger.info(f"result={result}")
     return result
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Railway monitoring"""
+    try:
+        # Test Firestore connection
+        from app.firestore_service import get_firestore_client
+        db = get_firestore_client()
+        # Simple test to verify Firestore is accessible
+        db.collection('health_check').limit(1).get()
+        
+        return {
+            "status": "healthy",
+            "service": "Motorcycle Weather API",
+            "environment": os.getenv("ENVIRONMENT", "development"),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=503, 
+            detail=f"Service unhealthy: {str(e)}"
+        )
 
 @app.post("/CoordinatesToWeather/")
 async def coordinatesToWeather(request: CoordsToWeatherRequest):
-    print(f"Getting weather info for {request}")
-    print(MESSAGE_SEPARATOR)
+    logger.info(f"Getting weather info for {request}")
 
     result = {}
     if len(request.coordinates) == 0:
@@ -97,22 +196,22 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
             if element.eta:
                 coord_eta = datetime.fromisoformat(element.eta).astimezone(timezone.utc)
             list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta))
-        print(f"list_of_coordinates after list creation={list_of_coordinates}")
+        logger.info(f"list_of_coordinates after list creation={list_of_coordinates}")
 
         # Get weather for list of Coordinates
         getWeather(list_of_coordinates)
-        print(f"list_of_coordinates after weather retrieved={list_of_coordinates}, and request.ignoreEta={request.ignoreEta}")
+        logger.info(f"list_of_coordinates after weather retrieved={list_of_coordinates}, and request.ignoreEta={request.ignoreEta}")
 
         # Filter forecasts
         coordinates_to_forecasts_map = filterWeatherData(list_of_coordinates, request.ignoreEta)
-        print(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
+        logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
     except:
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    print(f"result={result}")
+    logger.info(f"result={result}")
     return result
 
 
