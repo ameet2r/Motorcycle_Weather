@@ -2,11 +2,9 @@ requests
 python-dotenv
 polyline
 tqdm
-psycopg2-binary
-redis
+google-cloud-firestore
 fastapi[all]
 uvicorn[standard]
 pydantic
-rq
 httpx
 pytest

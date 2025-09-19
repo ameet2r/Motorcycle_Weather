@@ -3,8 +3,7 @@ from datetime import datetime, timedelta, timezone
 from app.directions import computeRoutes
 from app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
-from app.db import init_db_pool, create_tables, close_pool
-from app.cache import close_redis
+from app.firestore_service import cleanup_expired_documents
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.coordinates import Coordinates
@@ -32,17 +31,20 @@ async def startupEvent():
     print(MESSAGE_SEPARATOR)
 
     load_dotenv()
-    init_db_pool()
-    create_tables()
-    print("Environment loaded, Database pool initialized, and tables ensured.")
+    print("Environment loaded, Firestore client initialized.")
+    
+    # Optional: Clean up expired documents on startup
+    try:
+        cleanup_expired_documents()
+        print("Cleaned up expired documents from Firestore.")
+    except Exception as e:
+        print(f"Warning: Could not clean up expired documents: {e}")
 
 
 @app.on_event("shutdown")
 async def shutdownEvent():
     print("Shutting down service...")
-    close_pool()
-    close_redis()
-    print("Database pool and Redis closed.")
+    print("Firestore connections closed automatically.")
 
 
 async def main(request: DirectionsToWeatherRequest):

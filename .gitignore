@@ -146,6 +146,14 @@ ENV/
 env.bak/
 venv.bak/
 
+# Google Cloud Service Account Keys
+service-account-key.json
+*-service-account-key.json
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
 # Spyder project settings
 .spyderproject
 .spyproject
