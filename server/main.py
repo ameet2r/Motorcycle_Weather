@@ -86,6 +86,8 @@ app.add_middleware(
 @app.on_event("startup")
 async def startupEvent():
     logger.info("Welcome to Motorcycle Weather API")
+    logger.info(f"PORT environment variable: {os.getenv('PORT', 'NOT SET (defaulting to 8000)')}")
+    logger.info(f"ENVIRONMENT: {os.getenv('ENVIRONMENT', 'development')}")
 
     load_dotenv()
     
@@ -149,19 +151,29 @@ async def main(request: DirectionsToWeatherRequest):
         logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
-        result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
+        result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map
     except:
         raise HTTPException(status_code=500, detail="Internal server error")
 
     logger.info(f"result={result}")
     return result
 
+@app.get("/")
+async def root():
+    """Root endpoint for basic connectivity test"""
+    return {
+        "message": "Motorcycle Weather API is running",
+        "status": "online",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint for Railway monitoring"""
     try:
-        # Log health check attempt
-        logger.info("Health check requested")
+        # Log health check attempt with more details
+        logger.info("=== HEALTH CHECK REQUESTED ===")
+        logger.info(f"Request received at /health endpoint")
         
         # Basic health check response
         health_response = {

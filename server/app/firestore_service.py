@@ -27,6 +27,9 @@ class FirestoreService:
     def __init__(self):
         # Use lazy initialization - get client when needed
         self._db = None
+        self.coordinates_collection = "coordinates"
+        self.gridpoints_collection = "gridpoints"
+        self.forecasts_collection = "forecasts"
     
     @property
     def db(self):
@@ -34,9 +37,6 @@ class FirestoreService:
         if self._db is None:
             self._db = get_firestore_client()
         return self._db
-        self.coordinates_collection = "coordinates"
-        self.gridpoints_collection = "gridpoints" 
-        self.forecasts_collection = "forecasts"
     
     def _is_expired(self, expires_at: datetime) -> bool:
         """Check if a document has expired"""
