@@ -4,7 +4,9 @@ from .app.directions import computeRoutes
 from .app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
 from .app.firestore_service import cleanup_expired_documents
-from fastapi import FastAPI, HTTPException
+from .app.firebase_admin import get_firebase_app
+from .app.auth import get_authenticated_user
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from .app.coordinates import Coordinates
 from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
@@ -118,6 +120,15 @@ async def startupEvent():
     
     logger.info("Environment loaded, Firestore client initialized.")
     
+    # Initialize Firebase Admin SDK
+    try:
+        firebase_app = get_firebase_app()
+        logger.info("Firebase Admin SDK initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Firebase Admin SDK: {e}")
+        # Don't raise here - let the app start but auth will fail
+        logger.warning("Authentication will not work until Firebase is properly configured")
+    
     # Optional: Clean up expired documents on startup
     try:
         cleanup_expired_documents()
@@ -225,8 +236,11 @@ async def health_check():
         )
 
 @app.post("/CoordinatesToWeather/")
-async def coordinatesToWeather(request: CoordsToWeatherRequest):
-    logger.info(f"Getting weather info for {request}")
+async def coordinatesToWeather(
+    request: CoordsToWeatherRequest,
+    user: dict = Depends(get_authenticated_user)
+):
+    logger.info(f"Getting weather info for {request} - User: {user['uid']}")
 
     result = {}
     if len(request.coordinates) == 0:
@@ -253,11 +267,16 @@ async def coordinatesToWeather(request: CoordsToWeatherRequest):
         logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
         # Build result
-        result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map 
-    except:
+        result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map
+        result["user_info"] = {
+            "uid": user["uid"],
+            "email": user["email"]
+        }
+    except Exception as e:
+        logger.error(f"Error processing weather request for user {user['uid']}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    logger.info(f"result={result}")
+    logger.info(f"result={result} - User: {user['uid']}")
     return result
 
 

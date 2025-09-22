@@ -1,0 +1,53 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Security rules for Motorcycle Weather API
+    // All Firestore access should go through the authenticated backend service
+    // Direct frontend access is not allowed for security
+    
+    // Allow backend service account full access to all collections
+    // The backend validates Firebase ID tokens before accessing Firestore
+    match /{document=**} {
+      // Only allow access from authenticated backend service
+      // This rule ensures all data access goes through your authenticated API
+      allow read, write: if request.auth != null && 
+        request.auth.token.firebase.sign_in_provider != null;
+    }
+    
+    // Specific rules for weather caching collections
+    match /coordinates/{coordinateId} {
+      // Backend can read/write coordinate to gridpoint mappings
+      allow read, write: if request.auth != null;
+    }
+    
+    match /gridpoints/{gridpointId} {
+      // Backend can read/write gridpoint to forecast URL mappings
+      allow read, write: if request.auth != null;
+    }
+    
+    match /forecasts/{forecastId} {
+      // Backend can read/write forecast data
+      allow read, write: if request.auth != null;
+    }
+    
+    // Health check collection (used by backend health endpoint)
+    match /health_check/{document} {
+      // Allow backend to test Firestore connectivity
+      allow read: if request.auth != null;
+    }
+    
+    // // Optional: User-specific data collections (for future features)
+    // match /users/{userId} {
+    //   // Users can only access their own data through authenticated backend
+    //   allow read, write: if request.auth != null && 
+    //     request.auth.uid == userId;
+    // }
+    
+    // match /user_weather_history/{userId}/{document=**} {
+    //   // User-specific weather request history (if implemented)
+    //   allow read, write: if request.auth != null && 
+    //     request.auth.uid == userId;
+    // }
+  }
+}

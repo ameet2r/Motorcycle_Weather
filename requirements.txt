@@ -3,6 +3,7 @@ python-dotenv
 polyline
 tqdm
 google-cloud-firestore
+firebase-admin
 fastapi[all]
 uvicorn[standard]
 pydantic
