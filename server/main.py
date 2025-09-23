@@ -6,11 +6,16 @@ from tqdm import tqdm
 from .app.firestore_service import cleanup_expired_documents
 from .app.firebase_admin import get_firebase_app
 from .app.auth import get_authenticated_user
-from fastapi import FastAPI, HTTPException, Depends
+from firebase_admin import auth
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from .app.coordinates import Coordinates
 from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
 from .app.constants import MESSAGE_SEPARATOR
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 import os
 import logging
 import signal
@@ -77,6 +82,12 @@ app = FastAPI(
     description="Weather forecasting service for motorcycle routes",
     version="1.0.0"
 )
+
+# Rate limiting setup
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Allow requests from the following locations
 origins = os.getenv("CORS_ORIGINS")
@@ -172,6 +183,77 @@ async def main(request: DirectionsToWeatherRequest):
 
     logger.info(f"result={result}")
     return result
+
+
+async def delete_user_account(user: dict, request: Request) -> dict:
+    """
+    Delete a user's account from Firebase Authentication and associated data.
+
+    Args:
+        user: User information from authentication
+        request: FastAPI request object for logging
+
+    Returns:
+        dict: Success response with deletion details
+
+    Raises:
+        HTTPException: If deletion fails
+    """
+    uid = user['uid']
+    email = user.get('email', 'unknown')
+
+    try:
+        # Delete user from Firebase Authentication
+        auth.delete_user(uid)
+        logger.info(f"Successfully deleted user account: UID={uid}, Email={email}")
+
+        # TODO: Add user data deletion from Firestore when user collections are implemented
+        # Example:
+        # firestore_service.delete_user_data(uid)
+
+        # TODO: Add Cloud Storage cleanup when user files are implemented
+        # Example:
+        # await cleanup_user_files(uid)
+
+        # Audit logging
+        deletion_time = datetime.now(timezone.utc)
+        logger.info(f"AUDIT: User account deleted - UID: {uid}, Email: {email}, "
+                   f"Timestamp: {deletion_time.isoformat()}, IP: {get_remote_address(request)}")
+
+        return {
+            "message": "Account successfully deleted",
+            "deleted_at": deletion_time.isoformat(),
+            "user_id": uid
+        }
+
+    except auth.UserNotFoundError:
+        logger.warning(f"Attempted to delete non-existent user: UID={uid}")
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": "User account not found",
+                "error_code": "USER_NOT_FOUND"
+            }
+        )
+    except auth.InsufficientPermissionError:
+        logger.error(f"Insufficient permissions to delete user: UID={uid}")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Insufficient permissions to delete account",
+                "error_code": "INSUFFICIENT_PERMISSIONS"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error deleting user account UID={uid}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": "Internal error during account deletion",
+                "error_code": "DELETION_FAILED"
+            }
+        )
+
 
 @app.get("/")
 async def root():
@@ -278,5 +360,31 @@ async def coordinatesToWeather(
 
     logger.info(f"result={result} - User: {user['uid']}")
     return result
+
+
+@app.delete("/user/account")
+@limiter.limit("1/hour", key_func=lambda request: request.state.user.get('uid') if hasattr(request.state, 'user') else get_remote_address(request))
+async def delete_account(
+    request: Request,
+    user: dict = Depends(get_authenticated_user)
+):
+    """
+    Delete the authenticated user's account.
+
+    This endpoint permanently deletes the user's account from Firebase Authentication
+    and any associated data. This action cannot be undone.
+
+    Rate limited to 1 request per hour per user.
+    """
+    # Store user in request state for rate limiting key function
+    request.state.user = user
+
+    logger.info(f"Account deletion requested by user: {user['uid']} ({user.get('email', 'unknown')})")
+
+    result = await delete_user_account(user, request)
+
+    logger.info(f"Account deletion completed for user: {user['uid']}")
+    return result
+
 
 
