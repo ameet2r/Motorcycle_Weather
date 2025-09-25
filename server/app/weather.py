@@ -63,7 +63,7 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
             grid_x = str(response_properties["gridX"])
             grid_y = str(response_properties["gridY"])
             point = Point(grid_id, grid_x, grid_y)
-            forecast_url = response_properties["forecast"]
+            forecast_url = response_properties["forecastHourly"]
             
             try:
                 # Store coordinate to gridpoints mapping synchronously
