@@ -2,8 +2,13 @@ import os
 from datetime import datetime, timezone
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 import json
+import logging
+
+logger = logging.getLogger(__name__)
+
+MembershipTier = Literal["free", "plus", "pro"]
 
 # Global client instance - will be initialized lazily
 _db_client = None
@@ -23,13 +28,14 @@ def get_firestore_client():
 
 class FirestoreService:
     """Service class for Firestore operations replacing PostgreSQL and Redis functionality"""
-    
+
     def __init__(self):
         # Use lazy initialization - get client when needed
         self._db = None
         self.coordinates_collection = "coordinates"
         self.gridpoints_collection = "gridpoints"
         self.forecasts_collection = "forecasts"
+        self.users_collection = "users"
     
     @property
     def db(self):
@@ -157,7 +163,73 @@ class FirestoreService:
         }
 
         doc_ref.set(data)
-    
+
+    # User document operations
+    def get_or_create_user(self, uid: str, email: str) -> Dict[str, Any]:
+        """
+        Get existing user document or create new one with default 'free' tier
+
+        Args:
+            uid: Firebase user ID
+            email: User email from Firebase token
+
+        Returns:
+            dict: User document data including membershipTier
+        """
+        doc_ref = self.db.collection(self.users_collection).document(uid)
+        doc = doc_ref.get()
+
+        if doc.exists:
+            user_data = doc.to_dict()
+            logger.info(f"Retrieved existing user document for UID: {uid}")
+            return user_data
+        else:
+            # Create new user document
+            user_data = {
+                'membershipTier': 'free',
+                'email': email,
+                'createdAt': datetime.now(timezone.utc)
+            }
+            doc_ref.set(user_data)
+            logger.info(f"Created new user document for UID: {uid} with email: {email}")
+            return user_data
+
+    def get_user(self, uid: str) -> Optional[Dict[str, Any]]:
+        """
+        Get user document by UID
+
+        Args:
+            uid: Firebase user ID
+
+        Returns:
+            dict or None: User document data if exists
+        """
+        doc_ref = self.db.collection(self.users_collection).document(uid)
+        doc = doc_ref.get()
+
+        if doc.exists:
+            return doc.to_dict()
+        return None
+
+    def update_user_membership_tier(self, uid: str, tier: MembershipTier) -> bool:
+        """
+        Update user's membership tier
+
+        Args:
+            uid: Firebase user ID
+            tier: New membership tier ('free', 'plus', 'pro')
+
+        Returns:
+            bool: True if update successful
+        """
+        if tier not in ['free', 'plus', 'pro']:
+            raise ValueError(f"Invalid membership tier: {tier}")
+
+        doc_ref = self.db.collection(self.users_collection).document(uid)
+        doc_ref.update({'membershipTier': tier})
+        logger.info(f"Updated membership tier for UID {uid} to {tier}")
+        return True
+
     # Utility methods
     def cleanup_expired_documents(self) -> None:
         """Clean up expired documents across all collections"""
@@ -209,3 +281,13 @@ def set_gridpoints_to_forecast(grid_id: str, grid_x: str, grid_y: str,
 
 def cleanup_expired_documents() -> None:
     return firestore_service.cleanup_expired_documents()
+
+# User document convenience functions
+def get_or_create_user(uid: str, email: str) -> Dict[str, Any]:
+    return firestore_service.get_or_create_user(uid, email)
+
+def get_user(uid: str) -> Optional[Dict[str, Any]]:
+    return firestore_service.get_user(uid)
+
+def update_user_membership_tier(uid: str, tier: MembershipTier) -> bool:
+    return firestore_service.update_user_membership_tier(uid, tier)

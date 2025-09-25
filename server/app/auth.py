@@ -1,10 +1,13 @@
 import logging
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Literal
 from functools import wraps
 from fastapi import Request, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from firebase_admin import auth
 from .firebase_admin import verify_firebase_token, get_user_info
+from .firestore_service import get_or_create_user
+
+MembershipTier = Literal["free", "plus", "pro"]
 
 logger = logging.getLogger(__name__)
 
@@ -122,17 +125,17 @@ async def get_authenticated_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
 ) -> dict:
     """
-    FastAPI dependency that requires authentication (no excluded paths)
-    
+    FastAPI dependency that requires authentication and fetches user document from Firestore
+
     Args:
         request: FastAPI request object
         credentials: HTTP Bearer token credentials
-        
+
     Returns:
-        dict: User information
-        
+        dict: User information including membershipTier from Firestore
+
     Raises:
-        HTTPException: If authentication fails
+        HTTPException: If authentication fails or user document cannot be accessed
     """
     # Always require authentication, regardless of path
     if not credentials:
@@ -144,17 +147,39 @@ async def get_authenticated_user(
                 "error_code": "AUTH_TOKEN_MISSING"
             }
         )
-    
+
     try:
         # Verify the Firebase ID token
         decoded_token = await verify_firebase_token(credentials.credentials)
-        
-        # Extract user information
+
+        # Extract user information from token
         user_info = get_user_info(decoded_token)
-        
-        logger.info(f"User authenticated for protected endpoint: {user_info['uid']}")
-        return user_info
-        
+        uid = user_info['uid']
+        email = user_info.get('email')
+
+        # Fetch or create user document from Firestore
+        try:
+            user_doc = get_or_create_user(uid, email)
+        except Exception as e:
+            logger.error(f"Failed to fetch/create user document for UID {uid}: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "message": "Failed to access user data",
+                    "error_code": "USER_DATA_ERROR"
+                }
+            )
+
+        # Merge Firebase user info with Firestore user data
+        complete_user_info = {
+            **user_info,
+            'membershipTier': user_doc.get('membershipTier', 'free'),
+            'createdAt': user_doc.get('createdAt')
+        }
+
+        logger.info(f"User authenticated for protected endpoint: {uid} (tier: {complete_user_info['membershipTier']})")
+        return complete_user_info
+
     except auth.InvalidIdTokenError:
         logger.warning("Invalid Firebase ID token for protected endpoint")
         raise HTTPException(
@@ -191,6 +216,9 @@ async def get_authenticated_user(
                 "error_code": "AUTH_TOKEN_MALFORMED"
             }
         )
+    except HTTPException:
+        # Re-raise HTTPExceptions (like the one from user data error above)
+        raise
     except Exception as e:
         logger.error(f"Unexpected authentication error for protected endpoint: {e}")
         raise HTTPException(
@@ -219,17 +247,69 @@ def require_auth(func: Callable) -> Callable:
     return wrapper
 
 
+def require_membership_tier(required_tier: MembershipTier):
+    """
+    Factory function to create a dependency that checks membership tier
+
+    Args:
+        required_tier: The minimum membership tier required ('free', 'plus', 'pro')
+
+    Returns:
+        FastAPI dependency function
+    """
+    tier_hierarchy = {'free': 0, 'plus': 1, 'pro': 2}
+
+    async def check_tier(user: dict = Depends(get_authenticated_user)) -> dict:
+        """
+        Check if user has required membership tier
+
+        Args:
+            user: User information from authentication
+
+        Returns:
+            dict: User information if tier requirement met
+
+        Raises:
+            HTTPException: If user's tier is insufficient
+        """
+        user_tier = user.get('membershipTier', 'free')
+        user_tier_level = tier_hierarchy.get(user_tier, 0)
+        required_level = tier_hierarchy.get(required_tier, 0)
+
+        if user_tier_level < required_level:
+            logger.warning(f"Access denied for user {user['uid']} (tier: {user_tier}) to {required_tier}+ content")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": f"This feature requires {required_tier} membership or higher",
+                    "error_code": "INSUFFICIENT_TIER",
+                    "user_tier": user_tier,
+                    "required_tier": required_tier
+                }
+            )
+
+        return user
+
+    return check_tier
+
+
+# Pre-configured tier dependencies for convenience
+require_free_tier = require_membership_tier('free')
+require_plus_tier = require_membership_tier('plus')
+require_pro_tier = require_membership_tier('pro')
+
+
 class AuthMiddleware:
     """
     Authentication middleware for FastAPI
-    
+
     This middleware can be used to add authentication to all routes,
     but currently we're using dependency injection instead for more granular control.
     """
-    
+
     def __init__(self, app):
         self.app = app
-    
+
     async def __call__(self, scope, receive, send):
         # For now, we're using dependency injection instead of middleware
         # This class is kept for potential future use

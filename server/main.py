@@ -5,7 +5,7 @@ from .app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
 from .app.firestore_service import cleanup_expired_documents
 from .app.firebase_admin import get_firebase_app
-from .app.auth import get_authenticated_user
+from .app.auth import get_authenticated_user, require_free_tier, require_plus_tier, require_pro_tier
 from firebase_admin import auth
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -352,7 +352,8 @@ async def coordinatesToWeather(
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map
         result["user_info"] = {
             "uid": user["uid"],
-            "email": user["email"]
+            "email": user["email"],
+            "membershipTier": user["membershipTier"]
         }
     except Exception as e:
         logger.error(f"Error processing weather request for user {user['uid']}: {e}")
@@ -385,6 +386,100 @@ async def delete_account(
 
     logger.info(f"Account deletion completed for user: {user['uid']}")
     return result
+
+
+@app.get("/user/profile")
+async def get_user_profile(user: dict = Depends(get_authenticated_user)):
+    """
+    Get the authenticated user's profile information including membership tier.
+
+    This endpoint should be called by the frontend immediately after user login
+    to get the user's current membership tier and profile data.
+
+    Returns:
+        dict: User profile information
+    """
+    return {
+        "uid": user["uid"],
+        "email": user["email"],
+        "email_verified": user.get("email_verified", False),
+        "membershipTier": user["membershipTier"],
+        "name": user.get("name"),
+        "picture": user.get("picture"),
+        "createdAt": user.get("createdAt"),
+        "auth_time": user.get("auth_time"),
+        "last_login": user.get("iat")
+    }
+
+
+@app.get("/free-data")
+async def get_free_data(user: dict = Depends(require_free_tier)):
+    """
+    Example endpoint accessible to all authenticated users (free tier and above)
+
+    Returns basic weather-related data for free users
+    """
+    return {
+        "message": "This is free tier data",
+        "user_tier": user["membershipTier"],
+        "data": {
+            "basic_forecast": "Sunny with a chance of clouds",
+            "temperature_range": "60-75°F"
+        }
+    }
+
+
+@app.get("/plus-data")
+async def get_plus_data(user: dict = Depends(require_plus_tier)):
+    """
+    Example endpoint accessible to plus and pro users only
+
+    Returns enhanced weather data for paying users
+    """
+    return {
+        "message": "This is plus tier data",
+        "user_tier": user["membershipTier"],
+        "data": {
+            "detailed_forecast": "Sunny with 20% chance of afternoon showers",
+            "temperature_range": "62-78°F",
+            "humidity": "45-65%",
+            "wind_speed": "5-15 mph",
+            "hourly_breakdown": ["Sunny", "Mostly Sunny", "Partly Cloudy", "Chance of Rain"]
+        }
+    }
+
+
+@app.get("/pro-data")
+async def get_pro_data(user: dict = Depends(require_pro_tier)):
+    """
+    Example endpoint accessible to pro users only
+
+    Returns premium weather data and analytics
+    """
+    return {
+        "message": "This is pro tier data",
+        "user_tier": user["membershipTier"],
+        "data": {
+            "premium_forecast": "High pressure system bringing clear skies with isolated afternoon thunderstorms",
+            "temperature_range": "64-82°F",
+            "humidity": "40-70%",
+            "wind_speed": "3-18 mph",
+            "precipitation_probability": "15%",
+            "uv_index": "Moderate (4-6)",
+            "air_quality": "Good",
+            "hourly_breakdown": [
+                {"time": "12:00", "condition": "Sunny", "temp": 72, "precip": 0},
+                {"time": "13:00", "condition": "Mostly Sunny", "temp": 75, "precip": 5},
+                {"time": "14:00", "condition": "Partly Cloudy", "temp": 78, "precip": 10},
+                {"time": "15:00", "condition": "Chance of Rain", "temp": 76, "precip": 25}
+            ],
+            "analytics": {
+                "best_riding_hours": "11:00-15:00",
+                "weather_stability": "High",
+                "risk_assessment": "Low"
+            }
+        }
+    }
 
 
 
