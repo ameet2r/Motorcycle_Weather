@@ -7,7 +7,7 @@ from .app.firestore_service import cleanup_expired_documents
 from .app.firebase_admin import get_firebase_app
 from .app.auth import get_authenticated_user, require_free_tier, require_plus_tier, require_pro_tier
 from firebase_admin import auth
-from fastapi import FastAPI, HTTPException, Depends, Request
+from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from .app.coordinates import Coordinates
 from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
@@ -309,13 +309,18 @@ async def health_check():
         
         logger.info("Health check completed successfully")
         return health_response
-        
+
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=503,
             detail=f"Service unhealthy: {str(e)}"
         )
+
+@app.get("/ping")
+async def ping():
+   """Simple connectivity check endpoint"""
+   return Response(status_code=200)
 
 @app.post("/CoordinatesToWeather/")
 async def coordinatesToWeather(
