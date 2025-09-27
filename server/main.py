@@ -23,6 +23,7 @@ import sys
 import tempfile
 import atexit
 
+load_dotenv()
 
 # Configure logging for production
 def setup_logging():
@@ -89,12 +90,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# Allow requests from the following locations
-origins = os.getenv("CORS_ORIGINS")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=os.getenv("CORS_ORIGINS"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,8 +103,7 @@ async def startupEvent():
     logger.info("Welcome to Motorcycle Weather API")
     logger.info(f"PORT environment variable: {os.getenv('PORT', 'NOT SET (defaulting to 8000)')}")
     logger.info(f"ENVIRONMENT: {os.getenv('ENVIRONMENT', 'development')}")
-
-    load_dotenv()
+    logger.info(f"CORS_ORIGINS: {os.getenv('CORS_ORIGINS', 'NOT SET')}")
     
     # Handle Railway credential setup
     creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
