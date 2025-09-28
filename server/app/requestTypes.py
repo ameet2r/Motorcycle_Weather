@@ -60,6 +60,7 @@ class DirectionsToWeatherRequest(BaseModel):
 
 class CoordinateLocation(BaseModel):
     latLng: LatLng
+    address: str|None = None
     eta: str|None = None
 
 class CoordsToWeatherRequest(BaseModel):

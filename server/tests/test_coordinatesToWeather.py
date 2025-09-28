@@ -1,10 +1,20 @@
 from fastapi.testclient import TestClient
-from main import app
+from server.main import app
+from server.app.auth import get_authenticated_user
 from .response import Response
 from datetime import datetime, timedelta, timezone
 
 
+def mock_get_authenticated_user():
+    return {
+        "uid": "test_user",
+        "email": "test@example.com",
+        "membershipTier": "free"
+    }
+
+
 client = TestClient(app)
+client.app.dependency_overrides[get_authenticated_user] = mock_get_authenticated_user
 HEADERS = {"Content-Type": "application/json"}
 CURRENT_TIME = datetime.now().astimezone(timezone.utc).isoformat()
 
@@ -209,5 +219,43 @@ def test_coordinates_outside_us():
     # Make sure error messages for each given latitude/longitude pair mention that coordinates must be within the US
     for msg in messages:
         assert "Coordinates must be within the United States" in msg
+
+
+def test_coordinates_with_address():
+    data = {
+        "coordinates": [
+            {
+                "latLng": {
+                    "latitude": "37.4258",
+                    "longitude": "-122.09865",
+                },
+                "address": "123 Main St, Mountain View, CA 94043, USA"
+            },
+            {
+                "latLng": {
+                    "latitude": "40.7128",
+                    "longitude": "-74.0060",
+                }
+            }
+        ]
+    }
+
+    response = client.post("/CoordinatesToWeather", headers=HEADERS, json=data)
+    result = Response(response.json())
+
+    assert response.status_code == 200
+    assert result.coordinates is not None
+    assert len(result.coordinates) == 2
+
+    # First coordinate should have address
+    assert "address" in result.coordinates[0]
+    assert result.coordinates[0]["address"] == "123 Main St, Mountain View, CA 94043, USA"
+    assert result.coordinates[0]["latLng"]["latitude"] == "37.4258"
+    assert result.coordinates[0]["latLng"]["longitude"] == "-122.09865"
+
+    # Second coordinate should not have address
+    assert "address" not in result.coordinates[1]
+    assert result.coordinates[1]["latLng"]["latitude"] == "40.7128"
+    assert result.coordinates[1]["latLng"]["longitude"] == "-74.0060"
 
 

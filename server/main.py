@@ -23,6 +23,7 @@ import sys
 import tempfile
 import atexit
 
+load_dotenv()
 
 # Configure logging for production
 def setup_logging():
@@ -89,12 +90,9 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
 
-# Allow requests from the following locations
-origins = os.getenv("CORS_ORIGINS")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=os.getenv("CORS_ORIGINS"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,8 +103,7 @@ async def startupEvent():
     logger.info("Welcome to Motorcycle Weather API")
     logger.info(f"PORT environment variable: {os.getenv('PORT', 'NOT SET (defaulting to 8000)')}")
     logger.info(f"ENVIRONMENT: {os.getenv('ENVIRONMENT', 'development')}")
-
-    load_dotenv()
+    logger.info(f"CORS_ORIGINS: {os.getenv('CORS_ORIGINS', 'NOT SET')}")
     
     # Handle Railway credential setup
     creds_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")
@@ -338,11 +335,11 @@ async def coordinatesToWeather(
         for element in request.coordinates:
             latitude = element.latLng.latitude
             longitude = element.latLng.longitude
-           
+
             coord_eta = None
             if element.eta:
                 coord_eta = datetime.fromisoformat(element.eta).astimezone(timezone.utc)
-            list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta))
+            list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta, address=element.address))
         logger.info(f"list_of_coordinates after list creation={list_of_coordinates}")
 
         # Get weather for list of Coordinates
@@ -353,7 +350,21 @@ async def coordinatesToWeather(
         coordinates_to_forecasts_map = filterWeatherData(list_of_coordinates, request.ignoreEta)
         logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
+        # Build coordinates list for response
+        coordinates_list = []
+        for coord in list_of_coordinates:
+            coord_dict = {
+                "latLng": {
+                    "latitude": coord.latitude,
+                    "longitude": coord.longitude
+                }
+            }
+            if coord.address:
+                coord_dict["address"] = coord.address
+            coordinates_list.append(coord_dict)
+
         # Build result
+        result["coordinates"] = coordinates_list
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map
         result["user_info"] = {
             "uid": user["uid"],
