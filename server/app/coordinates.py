@@ -23,25 +23,27 @@ class Point:
 
 
 class Coordinates:
-    def __init__(self, latitude: str, longitude: str, eta = None, point: Point = Point("", "", ""), forecast: Forecast = Forecast({})):
+    def __init__(self, latitude: str, longitude: str, eta = None, point: Point = Point("", "", ""), forecast: Forecast = Forecast({}), address: str|None = None):
         self.latitude = latitude
         self.longitude = longitude
         self.eta = eta
         self.point = point
         self.forecasts = forecast
+        self.address = address
 
     def __eq__(self, other):
-        return (isinstance(other, Coordinates) and 
-            self.latitude == other.latitude and 
-            self.longitude == other.longitude and 
-            self.eta == other.eta and 
-            self.point == other.point)
+        return (isinstance(other, Coordinates) and
+            self.latitude == other.latitude and
+            self.longitude == other.longitude and
+            self.eta == other.eta and
+            self.point == other.point and
+            self.address == other.address)
 
     def __hash__(self):
-        return hash((self.latitude, self.longitude, self.eta, self.point, self.forecasts))
+        return hash((self.latitude, self.longitude, self.eta, self.point, self.forecasts, self.address))
 
     def __repr__(self):
-        return f"Coordinates({self.latitude}, {self.longitude}, {self.eta}, {self.point}, {self.forecasts})"
+        return f"Coordinates({self.latitude}, {self.longitude}, {self.eta}, {self.point}, {self.forecasts}, {self.address})"
 
 
 class Step:

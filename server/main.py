@@ -335,11 +335,11 @@ async def coordinatesToWeather(
         for element in request.coordinates:
             latitude = element.latLng.latitude
             longitude = element.latLng.longitude
-           
+
             coord_eta = None
             if element.eta:
                 coord_eta = datetime.fromisoformat(element.eta).astimezone(timezone.utc)
-            list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta))
+            list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta, address=element.address))
         logger.info(f"list_of_coordinates after list creation={list_of_coordinates}")
 
         # Get weather for list of Coordinates
@@ -350,7 +350,21 @@ async def coordinatesToWeather(
         coordinates_to_forecasts_map = filterWeatherData(list_of_coordinates, request.ignoreEta)
         logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
 
+        # Build coordinates list for response
+        coordinates_list = []
+        for coord in list_of_coordinates:
+            coord_dict = {
+                "latLng": {
+                    "latitude": coord.latitude,
+                    "longitude": coord.longitude
+                }
+            }
+            if coord.address:
+                coord_dict["address"] = coord.address
+            coordinates_list.append(coord_dict)
+
         # Build result
+        result["coordinates"] = coordinates_list
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map
         result["user_info"] = {
             "uid": user["uid"],
