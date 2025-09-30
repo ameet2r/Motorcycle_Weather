@@ -1,10 +1,10 @@
 import logging
 from typing import Optional, Callable, Any, Literal
 from functools import wraps
-from fastapi import Request, HTTPException, Depends
+from fastapi import Request, HTTPException, Depends, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from firebase_admin import auth
-from .firebase_admin import verify_firebase_token, get_user_info
+from .firebase_admin import verify_firebase_token, verify_app_check_token, get_user_info
 from .firestore_service import get_or_create_user
 
 MembershipTier = Literal["free", "plus", "pro"]
@@ -33,25 +33,27 @@ class AuthenticationError(Exception):
 
 async def get_current_user(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    x_firebase_appcheck: Optional[str] = Header(None, alias="X-Firebase-AppCheck")
 ) -> Optional[dict]:
     """
-    FastAPI dependency to get current authenticated user
-    
+    FastAPI dependency to get current authenticated user with App Check verification
+
     Args:
         request: FastAPI request object
         credentials: HTTP Bearer token credentials
-        
+        x_firebase_appcheck: Firebase App Check token from header
+
     Returns:
         dict: User information if authenticated, None if on excluded path
-        
+
     Raises:
-        HTTPException: If authentication fails
+        HTTPException: If authentication or App Check verification fails
     """
     # Skip authentication for excluded paths
     if request.url.path in EXCLUDED_PATHS:
         return None
-    
+
     # Check if Authorization header is present
     if not credentials:
         logger.warning(f"Missing Authorization header for path: {request.url.path}")
@@ -62,17 +64,52 @@ async def get_current_user(
                 "error_code": "AUTH_TOKEN_MISSING"
             }
         )
-    
+
+    # Check if App Check header is present
+    if not x_firebase_appcheck:
+        logger.warning(f"Missing X-Firebase-AppCheck header for path: {request.url.path}")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "App Check token required",
+                "error_code": "APP_CHECK_TOKEN_MISSING"
+            }
+        )
+
     try:
-        # Verify the Firebase ID token
+        # Verify the Firebase App Check token first
+        await verify_app_check_token(x_firebase_appcheck)
+
+        # Then verify the Firebase ID token
         decoded_token = await verify_firebase_token(credentials.credentials)
-        
+
         # Extract user information
         user_info = get_user_info(decoded_token)
-        
-        logger.info(f"User authenticated successfully: {user_info['uid']}")
+
+        logger.info(f"User authenticated successfully with App Check: {user_info['uid']}")
         return user_info
-        
+
+    except ValueError as e:
+        # App Check verification errors
+        error_msg = str(e)
+        if "App Check" in error_msg:
+            logger.warning(f"App Check verification failed: {e}")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": error_msg,
+                    "error_code": "APP_CHECK_TOKEN_INVALID"
+                }
+            )
+        # Other ValueError (token format issues)
+        logger.warning(f"Invalid token format: {e}")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "message": "Invalid token format",
+                "error_code": "AUTH_TOKEN_MALFORMED"
+            }
+        )
     except auth.InvalidIdTokenError:
         logger.warning("Invalid Firebase ID token provided")
         raise HTTPException(
@@ -100,15 +137,6 @@ async def get_current_user(
                 "error_code": "AUTH_TOKEN_REVOKED"
             }
         )
-    except ValueError as e:
-        logger.warning(f"Invalid token format: {e}")
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "message": "Invalid token format",
-                "error_code": "AUTH_TOKEN_MALFORMED"
-            }
-        )
     except Exception as e:
         logger.error(f"Unexpected authentication error: {e}")
         raise HTTPException(
@@ -122,7 +150,8 @@ async def get_current_user(
 
 async def get_authenticated_user(
     request: Request,
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    x_firebase_appcheck: Optional[str] = Header(None, alias="X-Firebase-AppCheck")
 ) -> dict:
     """
     FastAPI dependency that requires authentication and fetches user document from Firestore
@@ -130,12 +159,13 @@ async def get_authenticated_user(
     Args:
         request: FastAPI request object
         credentials: HTTP Bearer token credentials
+        x_firebase_appcheck: Firebase App Check token from header
 
     Returns:
         dict: User information including membershipTier from Firestore
 
     Raises:
-        HTTPException: If authentication fails or user document cannot be accessed
+        HTTPException: If authentication or App Check verification fails or user document cannot be accessed
     """
     # Always require authentication, regardless of path
     if not credentials:
@@ -148,8 +178,22 @@ async def get_authenticated_user(
             }
         )
 
+    # Always require App Check, regardless of path
+    if not x_firebase_appcheck:
+        logger.warning(f"Missing X-Firebase-AppCheck header for protected endpoint: {request.url.path}")
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "App Check token required",
+                "error_code": "APP_CHECK_TOKEN_MISSING"
+            }
+        )
+
     try:
-        # Verify the Firebase ID token
+        # Verify the Firebase App Check token first
+        await verify_app_check_token(x_firebase_appcheck)
+
+        # Then verify the Firebase ID token
         decoded_token = await verify_firebase_token(credentials.credentials)
 
         # Extract user information from token
@@ -180,6 +224,27 @@ async def get_authenticated_user(
         logger.info(f"User authenticated for protected endpoint: {uid} (tier: {complete_user_info['membershipTier']})")
         return complete_user_info
 
+    except ValueError as e:
+        # App Check verification errors
+        error_msg = str(e)
+        if "App Check" in error_msg:
+            logger.warning(f"App Check verification failed for protected endpoint: {e}")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "message": error_msg,
+                    "error_code": "APP_CHECK_TOKEN_INVALID"
+                }
+            )
+        # Other ValueError (token format issues)
+        logger.warning(f"Invalid token format for protected endpoint: {e}")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "message": "Invalid token format",
+                "error_code": "AUTH_TOKEN_MALFORMED"
+            }
+        )
     except auth.InvalidIdTokenError:
         logger.warning("Invalid Firebase ID token for protected endpoint")
         raise HTTPException(
@@ -205,15 +270,6 @@ async def get_authenticated_user(
             detail={
                 "message": "Authentication token has been revoked",
                 "error_code": "AUTH_TOKEN_REVOKED"
-            }
-        )
-    except ValueError as e:
-        logger.warning(f"Invalid token format for protected endpoint: {e}")
-        raise HTTPException(
-            status_code=401,
-            detail={
-                "message": "Invalid token format",
-                "error_code": "AUTH_TOKEN_MALFORMED"
             }
         )
     except HTTPException:

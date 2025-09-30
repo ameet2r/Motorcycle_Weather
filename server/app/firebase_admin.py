@@ -2,7 +2,7 @@ import os
 import logging
 from typing import Optional
 import firebase_admin
-from firebase_admin import credentials, auth
+from firebase_admin import credentials, auth, app_check
 from google.auth.exceptions import GoogleAuthError
 
 logger = logging.getLogger(__name__)
@@ -101,13 +101,50 @@ async def verify_firebase_token(id_token: str) -> dict:
         raise
 
 
+async def verify_app_check_token(app_check_token: str) -> dict:
+    """
+    Verify Firebase App Check token
+
+    Args:
+        app_check_token: Firebase App Check token from client
+
+    Returns:
+        dict: Decoded App Check token claims
+
+    Raises:
+        ValueError: If token format is invalid or verification fails
+    """
+    if not app_check_token or not isinstance(app_check_token, str):
+        raise ValueError("Invalid App Check token format")
+
+    try:
+        # Get Firebase app instance
+        firebase_app = get_firebase_app()
+
+        # Verify the App Check token
+        decoded_token = app_check.verify_token(app_check_token, app=firebase_app)
+
+        logger.debug(f"App Check token verified successfully for app: {decoded_token.get('app_id')}")
+        return decoded_token
+
+    except app_check.InvalidAppCheckTokenError as e:
+        logger.warning(f"Invalid App Check token: {e}")
+        raise ValueError(f"Invalid App Check token: {e}")
+    except app_check.ExpiredAppCheckTokenError as e:
+        logger.warning(f"Expired App Check token: {e}")
+        raise ValueError(f"Expired App Check token: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error during App Check token verification: {e}")
+        raise ValueError(f"App Check verification failed: {e}")
+
+
 def get_user_info(decoded_token: dict) -> dict:
     """
     Extract user information from decoded Firebase token
-    
+
     Args:
         decoded_token: Decoded Firebase ID token
-        
+
     Returns:
         dict: User information
     """
