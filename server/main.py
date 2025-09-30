@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from .app.directions import computeRoutes
 from .app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
-from .app.firestore_service import cleanup_expired_documents
+from .app.firestore_service import cleanup_expired_documents, delete_user
 from .app.firebase_admin import get_firebase_app
 from .app.auth import get_authenticated_user, require_free_tier, require_plus_tier, require_pro_tier
 from firebase_admin import auth
@@ -200,17 +200,16 @@ async def delete_user_account(user: dict, request: Request) -> dict:
     email = user.get('email', 'unknown')
 
     try:
+        # Delete user from Firestore
+        firestore_deleted = delete_user(uid)
+        if firestore_deleted:
+            logger.info(f"Deleted user data from Firestore: UID={uid}")
+        else:
+            logger.warning(f"User data not found in Firestore: UID={uid}")
+
         # Delete user from Firebase Authentication
         auth.delete_user(uid)
         logger.info(f"Successfully deleted user account: UID={uid}, Email={email}")
-
-        # TODO: Add user data deletion from Firestore when user collections are implemented
-        # Example:
-        # firestore_service.delete_user_data(uid)
-
-        # TODO: Add Cloud Storage cleanup when user files are implemented
-        # Example:
-        # await cleanup_user_files(uid)
 
         # Audit logging
         deletion_time = datetime.now(timezone.utc)

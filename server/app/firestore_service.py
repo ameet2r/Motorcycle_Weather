@@ -230,6 +230,27 @@ class FirestoreService:
         logger.info(f"Updated membership tier for UID {uid} to {tier}")
         return True
 
+    def delete_user(self, uid: str) -> bool:
+        """
+        Delete user document from Firestore
+
+        Args:
+            uid: Firebase user ID
+
+        Returns:
+            bool: True if deletion successful, False if user not found
+        """
+        doc_ref = self.db.collection(self.users_collection).document(uid)
+        doc = doc_ref.get()
+
+        if doc.exists:
+            doc_ref.delete()
+            logger.info(f"Deleted user document for UID: {uid}")
+            return True
+        else:
+            logger.warning(f"User document not found for UID: {uid}")
+            return False
+
     # Utility methods
     def cleanup_expired_documents(self) -> None:
         """Clean up expired documents across all collections"""
@@ -291,3 +312,6 @@ def get_user(uid: str) -> Optional[Dict[str, Any]]:
 
 def update_user_membership_tier(uid: str, tier: MembershipTier) -> bool:
     return firestore_service.update_user_membership_tier(uid, tier)
+
+def delete_user(uid: str) -> bool:
+    return firestore_service.delete_user(uid)
