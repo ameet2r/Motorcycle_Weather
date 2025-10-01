@@ -84,48 +84,66 @@ def computeRoutes(request: DirectionsToWeatherRequest) -> tuple:
             generated_data = generateRequestData(request)
 
             print(f"request to computeRoutes: url={url}, headers={headers}, json={generated_data}")
-            response = requests.post(url, headers=headers, json=generated_data)
+            response = requests.post(url, headers=headers, json=generated_data, timeout=15)
+
+            # Validate response
+            if not response.ok:
+                print(f"Google Routes API error - Status: {response.status_code}, Reason: {response.reason}")
+                return ([], [])
+
             response_json = response.json()
+
+            # Validate response structure
+            if "routes" not in response_json:
+                print(f"Invalid response structure from Google Routes API: missing 'routes'")
+                return ([], [])
 
             # Get list of coordinates, distances to each
             steps = []
 
             current_time = datetime.now().astimezone(timezone.utc)
-            if response.status_code == 200:
-                for route in response_json["routes"]:
-                    for leg in route["legs"]:
-                        for step in leg["steps"]:
-                            duration_seconds = int(step["staticDuration"][0:-1:1])
-                            distance_meters = step["distanceMeters"]
-                            encoded_polyline = step["polyline"]["encodedPolyline"]
-                            decoded_polyline = polyline.decode(encoded_polyline)
+            for route in response_json["routes"]:
+                for leg in route["legs"]:
+                    for step in leg["steps"]:
+                        # Validate step structure
+                        required_step_fields = ["staticDuration", "distanceMeters", "polyline"]
+                        if not all(field in step for field in required_step_fields):
+                            print(f"Invalid step structure: missing required fields")
+                            continue
 
-                            # Compute distances between coordinates
-                            segment_distances = []
-                            total_distance = 0
-                            for idx in range(1, len(decoded_polyline)):
-                                distance = haversine(decoded_polyline[idx-1][0], decoded_polyline[idx-1][1], 
-                                                     decoded_polyline[idx][0], decoded_polyline[idx][1])
-                                segment_distances.append(distance)
-                                total_distance += distance
+                        if "encodedPolyline" not in step.get("polyline", {}):
+                            print(f"Invalid polyline structure: missing encodedPolyline")
+                            continue
 
-                            # Compute ETA per coordinate weighted by distance
-                            coordinates_list = []
-                            step_time = current_time
-                            for i, (latitude, longitude) in enumerate(decoded_polyline):
-                                if i > 0:
-                                    segment_duration = duration_seconds * (segment_distances[i-1] / total_distance)
-                                    step_time += timedelta(seconds=segment_duration)
-                                new_coordinate = Coordinates(latitude=str(latitude), longitude=str(longitude), eta=step_time.replace(tzinfo=timezone.utc))
-                                coordinates_list.append(new_coordinate)
-                                coords.append(new_coordinate)
-                            
-                            current_time += timedelta(seconds=duration_seconds)
-                            new_step = Step(distance_meters, encoded_polyline, coordinates_list)
-                            steps.append(new_step)
+                        duration_seconds = int(step["staticDuration"][0:-1:1])
+                        distance_meters = step["distanceMeters"]
+                        encoded_polyline = step["polyline"]["encodedPolyline"]
+                        decoded_polyline = polyline.decode(encoded_polyline)
 
-            else:
-                print(f"status_code={response.status_code}, error={response.reason}")
+                        # Compute distances between coordinates
+                        segment_distances = []
+                        total_distance = 0
+                        for idx in range(1, len(decoded_polyline)):
+                            distance = haversine(decoded_polyline[idx-1][0], decoded_polyline[idx-1][1],
+                                                 decoded_polyline[idx][0], decoded_polyline[idx][1])
+                            segment_distances.append(distance)
+                            total_distance += distance
+
+                        # Compute ETA per coordinate weighted by distance
+                        coordinates_list = []
+                        step_time = current_time
+                        for i, (latitude, longitude) in enumerate(decoded_polyline):
+                            if i > 0:
+                                segment_duration = duration_seconds * (segment_distances[i-1] / total_distance)
+                                step_time += timedelta(seconds=segment_duration)
+                            new_coordinate = Coordinates(latitude=str(latitude), longitude=str(longitude), eta=step_time.replace(tzinfo=timezone.utc))
+                            coordinates_list.append(new_coordinate)
+                            coords.append(new_coordinate)
+
+                        current_time += timedelta(seconds=duration_seconds)
+                        new_step = Step(distance_meters, encoded_polyline, coordinates_list)
+                        steps.append(new_step)
+
             result = steps
     except:
         print(f"Error retrieving route")

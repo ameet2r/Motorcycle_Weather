@@ -153,7 +153,7 @@ async def shutdownEvent():
 
 
 async def main(request: DirectionsToWeatherRequest):
-    logger.info(f"Getting weather info for your route from {request.origin} to {request.destination}")
+    logger.info(f"Route weather request: origin type={'placeId' if request.origin.placeId else 'address' if request.origin.address else 'location'}, destination type={'placeId' if request.destination.placeId else 'address' if request.destination.address else 'location'}, intermediates={len(request.intermediates)}")
 
     result = {}
 
@@ -163,22 +163,23 @@ async def main(request: DirectionsToWeatherRequest):
     try:
         # Get directions between two locations
         steps, coords = computeRoutes(request)
-        logger.info(f"coords after route computed={coords}, steps after route computed={steps}")
+        logger.debug(f"Computed route with {len(steps)} steps and {len(coords)} coordinates")
 
         # Get weather for directions. Directions are saved as set of distances and coordinates.
         getWeather(coords)
-        logger.info(f"list_of_coordinates after weather retrieved={coords}, and request.ignoreEta={request.ignoreEta}")
+        logger.debug(f"Retrieved weather for {len(coords)} coordinates")
 
         # Filter forecasts
         coordinates_to_forecasts_map = filterWeatherData(coords, request.ignoreEta)
-        logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
+        logger.debug(f"Filtered forecasts, found {len(coordinates_to_forecasts_map)} coordinate mappings")
 
         # Build result
         result["coordinates_to_forecasts_map"] = coordinates_to_forecasts_map
-    except:
+    except Exception as e:
+        logger.error(f"Error processing route weather request: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    logger.info(f"result={result}")
+    logger.info(f"Successfully processed route weather request")
     return result
 
 
@@ -323,7 +324,7 @@ async def coordinatesToWeather(
     request: CoordsToWeatherRequest,
     user: dict = Depends(get_authenticated_user)
 ):
-    logger.info(f"Getting weather info for {request} - User: {user['uid']}")
+    logger.info(f"Weather request from user {user['uid']}: {len(request.coordinates)} coordinates, ignoreEta={request.ignoreEta}")
 
     result = {}
     if len(request.coordinates) == 0:
@@ -337,17 +338,21 @@ async def coordinatesToWeather(
 
             coord_eta = None
             if element.eta:
-                coord_eta = datetime.fromisoformat(element.eta).astimezone(timezone.utc)
+                try:
+                    coord_eta = datetime.fromisoformat(element.eta).astimezone(timezone.utc)
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Invalid ETA format for user {user['uid']}: {element.eta}")
+                    raise HTTPException(status_code=400, detail=f"Invalid ETA format: {str(e)}")
             list_of_coordinates.append(Coordinates(latitude, longitude, coord_eta, address=element.address))
-        logger.info(f"list_of_coordinates after list creation={list_of_coordinates}")
+        logger.debug(f"Parsed {len(list_of_coordinates)} coordinates for user {user['uid']}")
 
         # Get weather for list of Coordinates
         getWeather(list_of_coordinates)
-        logger.info(f"list_of_coordinates after weather retrieved={list_of_coordinates}, and request.ignoreEta={request.ignoreEta}")
+        logger.debug(f"Retrieved weather for {len(list_of_coordinates)} coordinates")
 
         # Filter forecasts
         coordinates_to_forecasts_map = filterWeatherData(list_of_coordinates, request.ignoreEta)
-        logger.info(f"coordinates_to_forecasts_map={coordinates_to_forecasts_map}")
+        logger.debug(f"Filtered forecasts, found {len(coordinates_to_forecasts_map)} coordinate mappings")
 
         # Build coordinates list for response
         coordinates_list = []
@@ -374,7 +379,7 @@ async def coordinatesToWeather(
         logger.error(f"Error processing weather request for user {user['uid']}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-    logger.info(f"result={result} - User: {user['uid']}")
+    logger.info(f"Successfully processed weather request for user {user['uid']}")
     return result
 
 

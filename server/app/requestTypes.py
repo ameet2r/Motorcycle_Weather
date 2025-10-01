@@ -1,4 +1,5 @@
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, model_validator, field_validator, Field
+import re
 
 def is_in_us(latitude: float, longitude: float) -> bool:
     """Check if coordinates are in any U.S. state or major territory."""
@@ -48,21 +49,84 @@ class Waypoint(BaseModel):
     vehicleStopover: bool = False
     sideOfRoad: bool = False
     location: Location|None = None
-    placeId: str|None = None
-    address: str|None = None
+    placeId: str|None = Field(None, max_length=500)
+    address: str|None = Field(None, max_length=500)
+
+    @field_validator('placeId')
+    @classmethod
+    def validate_place_id(cls, v):
+        """Validate Google Place ID format if provided"""
+        if v is not None:
+            # Google Place IDs are alphanumeric with underscores/hyphens, typically start with specific prefixes
+            if not re.match(r'^[A-Za-z0-9_-]+$', v):
+                raise ValueError("Invalid Place ID format")
+            if len(v) < 10 or len(v) > 500:
+                raise ValueError("Place ID length must be between 10 and 500 characters")
+        return v
+
+    @field_validator('address')
+    @classmethod
+    def validate_address(cls, v):
+        """Validate address format if provided"""
+        if v is not None:
+            # Basic sanitization - no control characters
+            if any(ord(char) < 32 for char in v):
+                raise ValueError("Address contains invalid control characters")
+        return v
 
 class DirectionsToWeatherRequest(BaseModel):
     origin: Waypoint
     destination: Waypoint
-    intermediates: list[Waypoint] = []
+    intermediates: list[Waypoint] = Field(default=[], max_length=25)
     trafficAware: bool = False
     ignoreEta: bool = False
 
+    @field_validator('intermediates')
+    @classmethod
+    def validate_intermediates_length(cls, v):
+        """Limit number of intermediate waypoints to prevent DoS"""
+        if len(v) > 25:
+            raise ValueError("Maximum 25 intermediate waypoints allowed")
+        return v
+
 class CoordinateLocation(BaseModel):
     latLng: LatLng
-    address: str|None = None
-    eta: str|None = None
+    address: str|None = Field(None, max_length=500)
+    eta: str|None = Field(None, max_length=50)
+
+    @field_validator('address')
+    @classmethod
+    def validate_address(cls, v):
+        """Validate address format if provided"""
+        if v is not None:
+            # Basic sanitization - no control characters
+            if any(ord(char) < 32 for char in v):
+                raise ValueError("Address contains invalid control characters")
+        return v
+
+    @field_validator('eta')
+    @classmethod
+    def validate_eta_format(cls, v):
+        """Validate ETA is a valid ISO format datetime string"""
+        if v is not None:
+            from datetime import datetime, timezone
+            try:
+                # Attempt to parse as ISO format
+                datetime.fromisoformat(v).astimezone(timezone.utc)
+            except (ValueError, TypeError):
+                raise ValueError("ETA must be a valid ISO format datetime string")
+        return v
 
 class CoordsToWeatherRequest(BaseModel):
-    coordinates: list[CoordinateLocation]
+    coordinates: list[CoordinateLocation] = Field(..., max_length=200)
     ignoreEta: bool = False
+
+    @field_validator('coordinates')
+    @classmethod
+    def validate_coordinates_length(cls, v):
+        """Limit number of coordinates to prevent DoS"""
+        if len(v) > 200:
+            raise ValueError("Maximum 200 coordinates allowed")
+        if len(v) == 0:
+            raise ValueError("At least one coordinate is required")
+        return v
