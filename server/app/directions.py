@@ -1,11 +1,14 @@
 import math
 import requests
 import os
+import logging
 import polyline
 from tqdm import tqdm
 from datetime import datetime, timedelta, timezone
 from .coordinates import Step, Coordinates
 from .requestTypes import DirectionsToWeatherRequest, Waypoint
+
+logger = logging.getLogger(__name__)
 
 
 # Function to compute distance (meters) between two lat/lon points
@@ -80,22 +83,19 @@ def computeRoutes(request: DirectionsToWeatherRequest) -> tuple:
                 "X-Goog-Api-Key": os.getenv("GOOGLE_ROUTES_API_KEY"),
                 "X-Goog-FieldMask": "routes.legs.steps.polyline.encodedPolyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration"
             }
-            print(f"request={request}")
             generated_data = generateRequestData(request)
-
-            print(f"request to computeRoutes: url={url}, headers={headers}, json={generated_data}")
             response = requests.post(url, headers=headers, json=generated_data, timeout=15)
 
             # Validate response
             if not response.ok:
-                print(f"Google Routes API error - Status: {response.status_code}, Reason: {response.reason}")
+                logger.warning(f"Google Routes API error - Status: {response.status_code}")
                 return ([], [])
 
             response_json = response.json()
 
             # Validate response structure
             if "routes" not in response_json:
-                print(f"Invalid response structure from Google Routes API: missing 'routes'")
+                logger.warning(f"Invalid response structure from Google Routes API: missing 'routes'")
                 return ([], [])
 
             # Get list of coordinates, distances to each
@@ -108,11 +108,11 @@ def computeRoutes(request: DirectionsToWeatherRequest) -> tuple:
                         # Validate step structure
                         required_step_fields = ["staticDuration", "distanceMeters", "polyline"]
                         if not all(field in step for field in required_step_fields):
-                            print(f"Invalid step structure: missing required fields")
+                            logger.warning(f"Invalid step structure: missing required fields")
                             continue
 
                         if "encodedPolyline" not in step.get("polyline", {}):
-                            print(f"Invalid polyline structure: missing encodedPolyline")
+                            logger.warning(f"Invalid polyline structure: missing encodedPolyline")
                             continue
 
                         duration_seconds = int(step["staticDuration"][0:-1:1])
@@ -145,8 +145,8 @@ def computeRoutes(request: DirectionsToWeatherRequest) -> tuple:
                         steps.append(new_step)
 
             result = steps
-    except:
-        print(f"Error retrieving route")
+    except Exception as e:
+        logger.error(f"Error retrieving route: {e}")
 
     return (result, coords)
 

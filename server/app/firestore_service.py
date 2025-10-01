@@ -273,7 +273,7 @@ class FirestoreService:
             # Delete expired documents
             for doc in expired_docs:
                 doc.reference.delete()
-                print(f"Deleted expired document: {doc.id} from {collection_name}")
+                logger.debug(f"Deleted expired document: {doc.id} from {collection_name}")
 
 # Global service instance
 firestore_service = FirestoreService()

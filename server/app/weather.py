@@ -1,5 +1,6 @@
 import requests
 import os
+import logging
 from tqdm import tqdm
 from datetime import datetime, timedelta, timezone
 from .coordinates import Point, Step, Coordinates
@@ -14,6 +15,8 @@ from .firestore_service import (
 )
 import json
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 HEADERS = {
     "Accept": "application/geo+json",
@@ -47,14 +50,14 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
 
         # Validate response before parsing
         if not response.ok:
-            print(f"Weather API returned status code: {response.status_code}")
+            logger.warning(f"Weather API returned status code: {response.status_code}")
             return Point("", "", "")
 
         response_json = response.json()
 
         # Validate response structure
         if "properties" not in response_json:
-            print(f"Invalid response structure from Weather API: missing 'properties'")
+            logger.warning(f"Invalid response structure from Weather API: missing 'properties'")
             return Point("", "", "")
 
         response_header_cache_control = response.headers.get("Cache-Control", "")
@@ -65,7 +68,7 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
                 max_age_seconds = response_header_cache_control.split("max-age=")[1].split(",")[0]
                 max_age_hours = int(max_age_seconds) / 3600
         except:
-            print("Failed to gather max-age from cache-control, using default 24 hours")
+            logger.debug("Failed to gather max-age from cache-control, using default 24 hours")
 
         # Validate required fields in response
         expires_at = now + timedelta(hours=max_age_hours)
@@ -75,7 +78,7 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
         required_fields = ["gridId", "gridX", "gridY", "forecastHourly"]
         for field in required_fields:
             if field not in response_properties:
-                print(f"Invalid response structure: missing '{field}' in properties")
+                logger.warning(f"Invalid response structure: missing '{field}' in properties")
                 return Point("", "", "")
 
         grid_id = response_properties["gridId"]
@@ -93,11 +96,10 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
 
             return point
         except Exception as e:
-            print(f"Failed to store data in Firestore: {e}")
+            logger.error(f"Failed to store data in Firestore: {e}")
             return Point("", "", "")
     except Exception as e:
-        url = f"https://api.weather.gov/points/{truncated_latitude},{truncated_longitude}"
-        print(f"Failed to hit point endpoint with this request: {url}, headers={HEADERS}, error: {e}")
+        logger.error(f"Failed to fetch points from Weather API for coordinates {truncated_latitude},{truncated_longitude}: {e}")
         return Point("", "", "")
 
 
@@ -107,7 +109,7 @@ def getForecastUrl(gridpoint: Point, time: datetime = datetime.now(timezone.utc)
         forecast_url = get_gridpoints_to_forecast_url(gridpoint.grid_id, gridpoint.grid_x, gridpoint.grid_y)
         return forecast_url or ""
     except Exception as e:
-        print(f"Failed to get forecast_url from Firestore: {e}")
+        logger.error(f"Failed to get forecast_url from Firestore: {e}")
         return ""
 
 
@@ -121,7 +123,7 @@ def getForecast(gridpoint: Point) -> Forecast|None:
         if cached_forecast:
             return Forecast(cached_forecast)
     except Exception as e:
-        print(f"Failed to get forecast from Firestore: {e}")
+        logger.error(f"Failed to get forecast from Firestore: {e}")
 
     # Get forecast_url before hitting API
     forecast_url = getForecastUrl(gridpoint, time)
@@ -133,14 +135,14 @@ def getForecast(gridpoint: Point) -> Forecast|None:
 
             # Validate response
             if not forecast_response.ok:
-                print(f"Weather API error - Status: {forecast_response.status_code}, URL: {forecast_url}")
+                logger.warning(f"Weather API error - Status: {forecast_response.status_code}")
                 return Forecast({})
 
             forecast_data = forecast_response.json()
 
             # Validate response structure - should have properties with periods
             if "properties" not in forecast_data or "periods" not in forecast_data.get("properties", {}):
-                print(f"Invalid forecast response structure from Weather API")
+                logger.warning(f"Invalid forecast response structure from Weather API")
                 return Forecast({})
 
             expires_at = time + timedelta(hours=3)  # Expire forecast after 3 hours
@@ -149,14 +151,14 @@ def getForecast(gridpoint: Point) -> Forecast|None:
             try:
                 set_gridpoints_to_forecast(gridpoint.grid_id, gridpoint.grid_x, gridpoint.grid_y, forecast_data, expires_at)
             except Exception as e:
-                print(f"Failed to store forecast in Firestore: {e}")
+                logger.error(f"Failed to store forecast in Firestore: {e}")
 
             return Forecast(forecast_data)
         else:
-            print(f"Error getting forecast: no forecast_url found for gridpoint {gridpoint}")
+            logger.warning(f"Error getting forecast: no forecast_url found for gridpoint {gridpoint}")
             return Forecast({})
     except Exception as e:
-        print(f"Error getting forecast from API: {e}")
+        logger.error(f"Error getting forecast from API: {e}")
         return Forecast({})
 
 
