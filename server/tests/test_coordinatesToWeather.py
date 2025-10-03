@@ -138,9 +138,10 @@ def test_empty_coordinates_list():
     response = client.post("/CoordinatesToWeather", headers=HEADERS, json=data)
     response_json = response.json()
 
-
-    assert response.status_code == 400
-    assert response_json["detail"] == "No coordinates provided"
+    assert response.status_code == 422
+    assert "detail" in response_json
+    error_messages = [error["msg"] for error in response_json["detail"]]
+    assert any("At least one coordinate is required" in msg for msg in error_messages)
 
 
 def test_coordinates_inside_us():

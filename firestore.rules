@@ -31,6 +31,31 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
     
+    // Searches collection (plus/pro tier users only)
+    match /searches/{searchId} {
+      // Helper function to check if user has plus or pro tier
+      function hasRequiredTier() {
+        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+        return userDoc.data.membershipTier in ['plus', 'pro'];
+      }
+
+      // Allow read access if authenticated, owns the search, and has required tier
+      allow read: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && hasRequiredTier();
+
+      // Allow write (create/update) if authenticated and has required tier
+      // Also ensure the userId field matches the authenticated user
+      allow write: if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && hasRequiredTier();
+
+      // Allow delete if authenticated, owns the search, and has required tier
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid
+        && hasRequiredTier();
+    }
+
     // Health check collection (used by backend health endpoint)
     match /health_check/{document} {
       // Allow backend to test Firestore connectivity

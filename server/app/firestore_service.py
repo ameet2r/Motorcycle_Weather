@@ -36,6 +36,7 @@ class FirestoreService:
         self.gridpoints_collection = "gridpoints"
         self.forecasts_collection = "forecasts"
         self.users_collection = "users"
+        self.searches_collection = "searches"
     
     @property
     def db(self):
@@ -251,6 +252,139 @@ class FirestoreService:
             logger.warning(f"User document not found for UID: {uid}")
             return False
 
+    # Search operations
+    def create_search(self, search_id: str, user_id: str, timestamp: str,
+                     membership_tier: MembershipTier, coordinates: list) -> Dict[str, Any]:
+        """
+        Create a new search document for a user
+
+        Args:
+            search_id: Unique search ID from frontend
+            user_id: Firebase user ID
+            timestamp: ISO timestamp from frontend
+            membership_tier: User's membership tier
+            coordinates: List of coordinate/weather data
+
+        Returns:
+            dict: Created search document with server timestamps
+        """
+        doc_ref = self.db.collection(self.searches_collection).document(search_id)
+
+        now = datetime.now(timezone.utc)
+        search_data = {
+            'id': search_id,
+            'userId': user_id,
+            'timestamp': timestamp,
+            'createdAt': now,
+            'updatedAt': now,
+            'membershipTier': membership_tier,
+            'coordinates': coordinates
+        }
+
+        doc_ref.set(search_data)
+        logger.info(f"Created search {search_id} for user {user_id}")
+        return search_data
+
+    def get_search(self, search_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a search document by ID
+
+        Args:
+            search_id: Search document ID
+
+        Returns:
+            dict or None: Search document if exists
+        """
+        doc_ref = self.db.collection(self.searches_collection).document(search_id)
+        doc = doc_ref.get()
+
+        if doc.exists:
+            return doc.to_dict()
+        return None
+
+    def get_user_searches(self, user_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """
+        Get all searches for a user with pagination, sorted by most recent first
+
+        Args:
+            user_id: Firebase user ID
+            limit: Maximum number of results to return
+            offset: Number of results to skip
+
+        Returns:
+            dict: Contains 'searches', 'total', 'limit', 'offset'
+        """
+        # Get total count
+        all_searches = (
+            self.db.collection(self.searches_collection)
+            .where(filter=FieldFilter("userId", "==", user_id))
+            .stream()
+        )
+        total = sum(1 for _ in all_searches)
+
+        # Get paginated results, sorted by createdAt descending
+        searches_query = (
+            self.db.collection(self.searches_collection)
+            .where(filter=FieldFilter("userId", "==", user_id))
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(limit)
+            .offset(offset)
+        )
+
+        searches = [doc.to_dict() for doc in searches_query.stream()]
+
+        return {
+            'searches': searches,
+            'total': total,
+            'limit': limit,
+            'offset': offset
+        }
+
+    def delete_search(self, search_id: str) -> bool:
+        """
+        Delete a single search document
+
+        Args:
+            search_id: Search document ID
+
+        Returns:
+            bool: True if deletion successful, False if search not found
+        """
+        doc_ref = self.db.collection(self.searches_collection).document(search_id)
+        doc = doc_ref.get()
+
+        if doc.exists:
+            doc_ref.delete()
+            logger.info(f"Deleted search: {search_id}")
+            return True
+        else:
+            logger.warning(f"Search not found: {search_id}")
+            return False
+
+    def delete_user_searches(self, user_id: str) -> int:
+        """
+        Delete all searches for a user
+
+        Args:
+            user_id: Firebase user ID
+
+        Returns:
+            int: Number of searches deleted
+        """
+        searches = (
+            self.db.collection(self.searches_collection)
+            .where(filter=FieldFilter("userId", "==", user_id))
+            .stream()
+        )
+
+        deleted_count = 0
+        for doc in searches:
+            doc.reference.delete()
+            deleted_count += 1
+
+        logger.info(f"Deleted {deleted_count} searches for user {user_id}")
+        return deleted_count
+
     # Utility methods
     def cleanup_expired_documents(self) -> None:
         """Clean up expired documents across all collections"""
@@ -315,3 +449,20 @@ def update_user_membership_tier(uid: str, tier: MembershipTier) -> bool:
 
 def delete_user(uid: str) -> bool:
     return firestore_service.delete_user(uid)
+
+# Search convenience functions
+def create_search(search_id: str, user_id: str, timestamp: str,
+                 membership_tier: MembershipTier, coordinates: list) -> Dict[str, Any]:
+    return firestore_service.create_search(search_id, user_id, timestamp, membership_tier, coordinates)
+
+def get_search(search_id: str) -> Optional[Dict[str, Any]]:
+    return firestore_service.get_search(search_id)
+
+def get_user_searches(user_id: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    return firestore_service.get_user_searches(user_id, limit, offset)
+
+def delete_search(search_id: str) -> bool:
+    return firestore_service.delete_search(search_id)
+
+def delete_user_searches(user_id: str) -> int:
+    return firestore_service.delete_user_searches(user_id)

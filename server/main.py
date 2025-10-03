@@ -3,14 +3,22 @@ from datetime import datetime, timedelta, timezone
 from .app.directions import computeRoutes
 from .app.weather import getWeather, filterWeatherData
 from tqdm import tqdm
-from .app.firestore_service import cleanup_expired_documents, delete_user
+from .app.firestore_service import (
+    cleanup_expired_documents,
+    delete_user,
+    create_search,
+    get_search,
+    get_user_searches,
+    delete_search,
+    delete_user_searches
+)
 from .app.firebase_admin import get_firebase_app
 from .app.auth import get_authenticated_user, require_free_tier, require_plus_tier, require_pro_tier
 from firebase_admin import auth
 from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from .app.coordinates import Coordinates
-from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest
+from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest, CreateSearchRequest
 from .app.constants import MESSAGE_SEPARATOR
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -500,6 +508,307 @@ async def get_pro_data(user: dict = Depends(require_pro_tier)):
             }
         }
     }
+
+
+# Search endpoints (plus/pro tier only)
+
+@app.post("/searches/")
+async def create_search_endpoint(
+    request: CreateSearchRequest,
+    user: dict = Depends(require_plus_tier)
+):
+    """
+    Create a new search for the authenticated user.
+    Only accessible to plus and pro tier users.
+
+    Args:
+        request: Search creation request with id, timestamp, and coordinates
+        user: Authenticated user information
+
+    Returns:
+        dict: Created search object with server timestamps
+
+    Raises:
+        HTTPException: 400 if invalid data, 401 if not authenticated, 403 if not authorized
+    """
+    try:
+        # Convert Pydantic models to dicts for storage
+        coordinates_data = [coord.model_dump() for coord in request.coordinates]
+
+        # Create the search in Firestore
+        search_data = create_search(
+            search_id=request.id,
+            user_id=user['uid'],
+            timestamp=request.timestamp,
+            membership_tier=user['membershipTier'],
+            coordinates=coordinates_data
+        )
+
+        logger.info(f"Search {request.id} created for user {user['uid']}")
+
+        # Convert datetime objects to ISO strings for JSON response
+        response_data = {
+            **search_data,
+            'createdAt': search_data['createdAt'].isoformat(),
+            'updatedAt': search_data['updatedAt'].isoformat()
+        }
+
+        return response_data
+
+    except Exception as e:
+        logger.error(f"Error creating search for user {user['uid']}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to create search",
+                "code": "SEARCH_CREATE_FAILED"
+            }
+        )
+
+
+@app.get("/searches/")
+async def get_searches_endpoint(
+    user: dict = Depends(require_plus_tier),
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    Get all searches for the authenticated user with pagination.
+    Only accessible to plus and pro tier users.
+
+    Args:
+        user: Authenticated user information
+        limit: Maximum number of results (default: 50)
+        offset: Number of results to skip (default: 0)
+
+    Returns:
+        dict: Contains 'searches', 'total', 'limit', 'offset'
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if free tier
+    """
+    try:
+        # Validate pagination parameters
+        if limit < 1 or limit > 200:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Limit must be between 1 and 200",
+                    "code": "INVALID_LIMIT"
+                }
+            )
+
+        if offset < 0:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Offset must be non-negative",
+                    "code": "INVALID_OFFSET"
+                }
+            )
+
+        # Get searches from Firestore
+        result = get_user_searches(user['uid'], limit, offset)
+
+        # Convert datetime objects to ISO strings for JSON response
+        for search in result['searches']:
+            if 'createdAt' in search and search['createdAt']:
+                search['createdAt'] = search['createdAt'].isoformat()
+            if 'updatedAt' in search and search['updatedAt']:
+                search['updatedAt'] = search['updatedAt'].isoformat()
+
+        logger.info(f"Retrieved {len(result['searches'])} searches for user {user['uid']}")
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving searches for user {user['uid']}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to retrieve searches",
+                "code": "SEARCH_RETRIEVE_FAILED"
+            }
+        )
+
+
+@app.get("/searches/{search_id}")
+async def get_search_endpoint(
+    search_id: str,
+    user: dict = Depends(require_plus_tier)
+):
+    """
+    Get a single search by ID.
+    Only accessible to plus and pro tier users, and only for their own searches.
+
+    Args:
+        search_id: Search document ID
+        user: Authenticated user information
+
+    Returns:
+        dict: Search object
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not authorized, 404 if not found
+    """
+    try:
+        # Get the search from Firestore
+        search_data = get_search(search_id)
+
+        if not search_data:
+            logger.warning(f"Search {search_id} not found")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "Search not found",
+                    "code": "SEARCH_NOT_FOUND"
+                }
+            )
+
+        # Verify the search belongs to the authenticated user
+        if search_data.get('userId') != user['uid']:
+            logger.warning(f"User {user['uid']} attempted to access search {search_id} owned by {search_data.get('userId')}")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "You do not have permission to access this search",
+                    "code": "SEARCH_ACCESS_DENIED"
+                }
+            )
+
+        # Convert datetime objects to ISO strings for JSON response
+        if 'createdAt' in search_data and search_data['createdAt']:
+            search_data['createdAt'] = search_data['createdAt'].isoformat()
+        if 'updatedAt' in search_data and search_data['updatedAt']:
+            search_data['updatedAt'] = search_data['updatedAt'].isoformat()
+
+        logger.info(f"Retrieved search {search_id} for user {user['uid']}")
+        return search_data
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving search {search_id} for user {user['uid']}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to retrieve search",
+                "code": "SEARCH_RETRIEVE_FAILED"
+            }
+        )
+
+
+@app.delete("/searches/{search_id}")
+async def delete_search_endpoint(
+    search_id: str,
+    user: dict = Depends(require_plus_tier)
+):
+    """
+    Delete a single search by ID.
+    Only accessible to plus and pro tier users, and only for their own searches.
+
+    Args:
+        search_id: Search document ID
+        user: Authenticated user information
+
+    Returns:
+        Response: 204 No Content
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not authorized, 404 if not found
+    """
+    try:
+        # Get the search first to verify ownership
+        search_data = get_search(search_id)
+
+        if not search_data:
+            logger.warning(f"Search {search_id} not found for deletion")
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "Search not found",
+                    "code": "SEARCH_NOT_FOUND"
+                }
+            )
+
+        # Verify the search belongs to the authenticated user
+        if search_data.get('userId') != user['uid']:
+            logger.warning(f"User {user['uid']} attempted to delete search {search_id} owned by {search_data.get('userId')}")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "You do not have permission to delete this search",
+                    "code": "SEARCH_DELETE_DENIED"
+                }
+            )
+
+        # Delete the search
+        deleted = delete_search(search_id)
+
+        if deleted:
+            logger.info(f"Deleted search {search_id} for user {user['uid']}")
+            return Response(status_code=204)
+        else:
+            # This shouldn't happen since we already checked existence
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Failed to delete search",
+                    "code": "SEARCH_DELETE_FAILED"
+                }
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting search {search_id} for user {user['uid']}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to delete search",
+                "code": "SEARCH_DELETE_FAILED"
+            }
+        )
+
+
+@app.delete("/searches/")
+async def delete_all_searches_endpoint(
+    user: dict = Depends(require_plus_tier)
+):
+    """
+    Delete all searches for the authenticated user.
+    Only accessible to plus and pro tier users.
+
+    Args:
+        user: Authenticated user information
+
+    Returns:
+        dict: Number of searches deleted
+
+    Raises:
+        HTTPException: 401 if not authenticated, 403 if not authorized
+    """
+    try:
+        # Delete all searches for the user
+        deleted_count = delete_user_searches(user['uid'])
+
+        logger.info(f"Deleted {deleted_count} searches for user {user['uid']}")
+
+        return {
+            "deleted": deleted_count,
+            "message": f"Successfully deleted {deleted_count} search(es)"
+        }
+
+    except Exception as e:
+        logger.error(f"Error deleting all searches for user {user['uid']}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to delete searches",
+                "code": "SEARCHES_DELETE_FAILED"
+            }
+        )
 
 
 

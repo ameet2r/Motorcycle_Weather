@@ -130,3 +130,56 @@ class CoordsToWeatherRequest(BaseModel):
         if len(v) == 0:
             raise ValueError("At least one coordinate is required")
         return v
+
+class SearchCoordinate(BaseModel):
+    """Coordinate data for a saved search"""
+    key: str = Field(..., max_length=100)
+    latitude: str
+    longitude: str
+    address: str = Field(..., max_length=500)
+    elevation: str = Field(..., max_length=50)
+    periods: list
+    summary: dict
+
+    @field_validator('key')
+    @classmethod
+    def validate_key_format(cls, v):
+        """Validate key is in lat:lng format"""
+        if ':' not in v:
+            raise ValueError("Key must be in 'latitude:longitude' format")
+        return v
+
+class CreateSearchRequest(BaseModel):
+    """Request model for creating a search"""
+    id: str = Field(..., min_length=1, max_length=100)
+    timestamp: str = Field(..., max_length=50)
+    coordinates: list[SearchCoordinate] = Field(..., max_length=200)
+
+    @field_validator('id')
+    @classmethod
+    def validate_search_id(cls, v):
+        """Validate search ID format - alphanumeric, hyphens, underscores only"""
+        if not re.match(r'^[A-Za-z0-9_-]+$', v):
+            raise ValueError("Search ID must contain only alphanumeric characters, hyphens, and underscores")
+        return v
+
+    @field_validator('timestamp')
+    @classmethod
+    def validate_timestamp_format(cls, v):
+        """Validate timestamp is a valid ISO format datetime string"""
+        from datetime import datetime, timezone
+        try:
+            datetime.fromisoformat(v).astimezone(timezone.utc)
+        except (ValueError, TypeError):
+            raise ValueError("Timestamp must be a valid ISO format datetime string")
+        return v
+
+    @field_validator('coordinates')
+    @classmethod
+    def validate_coordinates_length(cls, v):
+        """Limit number of coordinates to prevent DoS"""
+        if len(v) > 200:
+            raise ValueError("Maximum 200 coordinates allowed")
+        if len(v) == 0:
+            raise ValueError("At least one coordinate is required")
+        return v
