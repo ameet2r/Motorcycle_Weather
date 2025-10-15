@@ -570,16 +570,18 @@ async def create_search_endpoint(
 async def get_searches_endpoint(
     user: dict = Depends(require_plus_tier),
     limit: int = 50,
-    offset: int = 0
+    offset: int = 0,
+    search: str = None
 ):
     """
-    Get all searches for the authenticated user with pagination.
+    Get all searches for the authenticated user with pagination and optional filtering.
     Only accessible to plus and pro tier users.
 
     Args:
         user: Authenticated user information
         limit: Maximum number of results (default: 50)
         offset: Number of results to skip (default: 0)
+        search: Optional search query to filter by address (case-insensitive)
 
     Returns:
         dict: Contains 'searches', 'total', 'limit', 'offset'
@@ -610,12 +612,30 @@ async def get_searches_endpoint(
         # Get searches from Firestore
         result = get_user_searches(user['uid'], limit, offset)
 
+        # Apply search filtering if search parameter provided
+        if search and search.strip():
+            search_lower = search.strip().lower()
+            filtered_searches = []
+
+            for search_obj in result['searches']:
+                # Check if any coordinate address contains the search term
+                coordinates = search_obj.get('coordinates', [])
+                for coord in coordinates:
+                    address = coord.get('address', '')
+                    if address and search_lower in address.lower():
+                        filtered_searches.append(search_obj)
+                        break  # Found match in this search, no need to check other coords
+
+            result['searches'] = filtered_searches
+            result['total'] = len(filtered_searches)
+            logger.info(f"Filtered {len(filtered_searches)} searches for user {user['uid']} with query '{search}'")
+
         # Convert datetime objects to ISO strings for JSON response
-        for search in result['searches']:
-            if 'createdAt' in search and search['createdAt']:
-                search['createdAt'] = search['createdAt'].isoformat()
-            if 'updatedAt' in search and search['updatedAt']:
-                search['updatedAt'] = search['updatedAt'].isoformat()
+        for search_obj in result['searches']:
+            if 'createdAt' in search_obj and search_obj['createdAt']:
+                search_obj['createdAt'] = search_obj['createdAt'].isoformat()
+            if 'updatedAt' in search_obj and search_obj['updatedAt']:
+                search_obj['updatedAt'] = search_obj['updatedAt'].isoformat()
 
         logger.info(f"Retrieved {len(result['searches'])} searches for user {user['uid']}")
         return result
