@@ -12,6 +12,7 @@ class Period:
             self.probability_of_precip = period_json["probabilityOfPrecipitation"]["value"]
             self.wind_speed = period_json["windSpeed"]
             self.wind_direction = period_json["windDirection"]
+            self.wind_gust = period_json.get("windGust")
             self.icon = period_json["icon"]
             self.short_forecast = period_json["shortForecast"]
             self.detailed_forecast = period_json["detailedForecast"]
@@ -26,6 +27,7 @@ class Period:
             self.probability_of_precip = ""
             self.wind_speed = ""
             self.wind_direction = ""
+            self.wind_gust = ""
             self.icon = ""
             self.short_forecast = ""
             self.detailed_forecast = ""
@@ -33,7 +35,7 @@ class Period:
 
 
     def __eq__(self, other):
-        return (isinstance(other, Period) and 
+        return (isinstance(other, Period) and
             self.number == other.number and
             self.name == other.name and
             self.start_time == other.start_time and
@@ -43,19 +45,20 @@ class Period:
             self.probability_of_precip == other.probability_of_precip and
             self.wind_speed == other.wind_speed and
             self.wind_direction == other.wind_direction and
+            self.wind_gust == other.wind_gust and
             self.icon == other.icon and
             self.short_forecast == other.short_forecast and
             self.detailed_forecast == other.detailed_forecast and
             self.period_json == other.period_json)
 
     def __hash__(self):
-        return hash((self.number, self.name, self.start_time, 
-                     self.end_time, self.is_day_time, self.temperature, 
-                     self.probability_of_precip, self.wind_speed, self.wind_direction, 
-                     self.icon, self.short_forecast, self.detailed_forecast, self.period_json))
+        return hash((self.number, self.name, self.start_time,
+                     self.end_time, self.is_day_time, self.temperature,
+                     self.probability_of_precip, self.wind_speed, self.wind_direction,
+                     self.wind_gust, self.icon, self.short_forecast, self.detailed_forecast, self.period_json))
 
     def __repr__(self):
-        return f"Period({self.number}, {self.name}, {self.start_time}, {self.end_time}, {self.is_day_time}, {self.temperature}, {self.probability_of_precip}, {self.wind_speed}, {self.wind_speed}, {self.icon}, {self.short_forecast}, {self.detailed_forecast}, {self.period_json})"
+        return f"Period({self.number}, {self.name}, {self.start_time}, {self.end_time}, {self.is_day_time}, {self.temperature}, {self.probability_of_precip}, {self.wind_speed}, {self.wind_direction}, {self.wind_gust}, {self.icon}, {self.short_forecast}, {self.detailed_forecast}, {self.period_json})"
 
     def to_json_str(self):
         return self.period_json

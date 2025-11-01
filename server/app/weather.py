@@ -115,6 +115,103 @@ def getForecastUrl(gridpoint: Point, time: datetime = datetime.now(timezone.utc)
         return ""
 
 
+def getWindGustData(gridpoint: Point) -> dict:
+    """
+    Get wind gust time series data from raw gridpoint endpoint.
+    Returns a dict mapping ISO timestamp strings to wind gust values in mph.
+    """
+    try:
+        gridpoint_url = f"https://api.weather.gov/gridpoints/{gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}"
+        response = requests.get(gridpoint_url, headers=HEADERS, timeout=10)
+
+        if not response.ok:
+            logger.warning(f"Gridpoint API error - Status: {response.status_code}")
+            return {}
+
+        gridpoint_data = response.json()
+
+        # Extract windGust time series
+        if "properties" not in gridpoint_data or "windGust" not in gridpoint_data["properties"]:
+            logger.debug(f"No windGust data in gridpoint response for {gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}")
+            return {}
+
+        wind_gust_layer = gridpoint_data["properties"]["windGust"]
+        values = wind_gust_layer.get("values", [])
+        uom = wind_gust_layer.get("uom", "")
+
+        # Convert to dict mapping timestamp -> gust value in mph
+        gust_map = {}
+        km_to_mph = 0.621371
+
+        for entry in values:
+            valid_time = entry.get("validTime", "")
+            value = entry.get("value")
+
+            if valid_time and value is not None:
+                # Parse ISO 8601 duration format (e.g., "2025-10-31T21:00:00+00:00/PT1H")
+                timestamp = valid_time.split("/")[0]
+
+                # Convert km/h to mph if needed
+                if "km" in uom.lower():
+                    gust_mph = value * km_to_mph
+                else:
+                    gust_mph = value  # Assume already in mph
+
+                gust_map[timestamp] = f"{int(round(gust_mph))} mph"
+
+        logger.debug(f"Retrieved {len(gust_map)} wind gust data points for gridpoint {gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}")
+        return gust_map
+
+    except Exception as e:
+        logger.error(f"Error fetching wind gust data from gridpoint API: {e}")
+        return {}
+
+
+def _merge_wind_gust_data(forecast_data: dict, wind_gust_map: dict) -> None:
+    """
+    Merge wind gust data into forecast periods by matching timestamps.
+    Modifies forecast_data in place.
+    """
+    if "properties" not in forecast_data or "periods" not in forecast_data["properties"]:
+        return
+
+    periods = forecast_data["properties"]["periods"]
+    matched_count = 0
+
+    for period in periods:
+        start_time = period.get("startTime", "")
+
+        # Try to match wind gust data by timestamp
+        # Wind gust timestamps might not match exactly, so we look for the closest match
+        if start_time:
+            # Normalize timestamp for comparison (remove timezone offset variations)
+            period_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+
+            # Look for exact match first
+            gust_value = wind_gust_map.get(start_time)
+
+            # If no exact match, look for timestamp with same hour
+            if not gust_value:
+                for gust_timestamp, gust_val in wind_gust_map.items():
+                    try:
+                        gust_dt = datetime.fromisoformat(gust_timestamp.replace('Z', '+00:00'))
+                        # Match if same hour
+                        if (period_dt.year == gust_dt.year and
+                            period_dt.month == gust_dt.month and
+                            period_dt.day == gust_dt.day and
+                            period_dt.hour == gust_dt.hour):
+                            gust_value = gust_val
+                            break
+                    except:
+                        continue
+
+            if gust_value:
+                period["windGust"] = gust_value
+                matched_count += 1
+
+    logger.debug(f"Merged wind gust data: {matched_count}/{len(periods)} periods matched")
+
+
 def getForecast(gridpoint: Point) -> Forecast|None:
     """Get forecast for a gridpoint from Firestore or weather API"""
     time = datetime.now(timezone.utc)
@@ -123,6 +220,10 @@ def getForecast(gridpoint: Point) -> Forecast|None:
     try:
         cached_forecast = get_gridpoints_to_forecast(gridpoint.grid_id, gridpoint.grid_x, gridpoint.grid_y)
         if cached_forecast:
+            # Fetch wind gust data and merge it
+            wind_gust_map = getWindGustData(gridpoint)
+            if wind_gust_map:
+                _merge_wind_gust_data(cached_forecast, wind_gust_map)
             return Forecast(cached_forecast)
     except Exception as e:
         logger.error(f"Failed to get forecast from Firestore: {e}")
@@ -146,6 +247,11 @@ def getForecast(gridpoint: Point) -> Forecast|None:
             if "properties" not in forecast_data or "periods" not in forecast_data.get("properties", {}):
                 logger.warning(f"Invalid forecast response structure from Weather API")
                 return Forecast({})
+
+            # Fetch wind gust data and merge it into forecast periods
+            wind_gust_map = getWindGustData(gridpoint)
+            if wind_gust_map:
+                _merge_wind_gust_data(forecast_data, wind_gust_map)
 
             expires_at = time + timedelta(hours=3)  # Expire forecast after 3 hours
 
