@@ -37,6 +37,7 @@ class FirestoreService:
         self.forecasts_collection = "forecasts"
         self.users_collection = "users"
         self.searches_collection = "searches"
+        self.alerts_collection = "alerts"
     
     @property
     def db(self):
@@ -160,6 +161,40 @@ class FirestoreService:
             'gridX': int(grid_x),
             'gridY': int(grid_y),
             'forecast': json.dumps(forecast),
+            'expiresAt': expires_at
+        }
+
+        doc_ref.set(data)
+
+    # Alerts operations (weather alerts caching)
+    def get_alerts(self, latitude: str, longitude: str) -> Optional[list]:
+        """Get active weather alerts for coordinates"""
+        doc_id = self._create_coordinate_doc_id(latitude, longitude)
+        doc_ref = self.db.collection(self.alerts_collection).document(doc_id)
+        doc = doc_ref.get()
+
+        if doc.exists:
+            data = doc.to_dict()
+            # Check if expired
+            if not self._is_expired(data.get('expiresAt')):
+                alerts_json = data.get('alerts')
+                if alerts_json:
+                    return json.loads(alerts_json)
+            else:
+                # Delete expired document
+                doc_ref.delete()
+
+        return None
+
+    def set_alerts(self, latitude: str, longitude: str, alerts: list, expires_at: datetime) -> None:
+        """Store active weather alerts for coordinates"""
+        doc_id = self._create_coordinate_doc_id(latitude, longitude)
+        doc_ref = self.db.collection(self.alerts_collection).document(doc_id)
+
+        data = {
+            'latitude': float(latitude),
+            'longitude': float(longitude),
+            'alerts': json.dumps(alerts),
             'expiresAt': expires_at
         }
 
@@ -389,11 +424,12 @@ class FirestoreService:
     def cleanup_expired_documents(self) -> None:
         """Clean up expired documents across all collections"""
         now = datetime.now(timezone.utc)
-        
+
         collections = [
             self.coordinates_collection,
-            self.gridpoints_collection, 
-            self.forecasts_collection
+            self.gridpoints_collection,
+            self.forecasts_collection,
+            self.alerts_collection
         ]
         
         for collection_name in collections:
@@ -466,3 +502,10 @@ def delete_search(search_id: str) -> bool:
 
 def delete_user_searches(user_id: str) -> int:
     return firestore_service.delete_user_searches(user_id)
+
+# Alerts convenience functions
+def get_alerts(latitude: str, longitude: str) -> Optional[list]:
+    return firestore_service.get_alerts(latitude, longitude)
+
+def set_alerts(latitude: str, longitude: str, alerts: list, expires_at: datetime) -> None:
+    return firestore_service.set_alerts(latitude, longitude, alerts, expires_at)

@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 from datetime import datetime, timedelta, timezone
 from .app.directions import computeRoutes
-from .app.weather import getWeather, filterWeatherData
+from .app.weather import getWeather, filterWeatherData, getActiveAlerts, truncateCoordinate
 from tqdm import tqdm
 from .app.firestore_service import (
     cleanup_expired_documents,
@@ -389,6 +389,68 @@ async def coordinatesToWeather(
 
     logger.info(f"Successfully processed weather request for user {user['uid']}")
     return result
+
+
+@app.post("/WeatherAlerts/")
+async def weatherAlerts(
+    request: CoordsToWeatherRequest,
+    user: dict = Depends(get_authenticated_user)
+):
+    """
+    Get active weather alerts for specified locations.
+    Available to all authenticated users (free, plus, and pro tiers).
+
+    Args:
+        request: Request containing list of coordinates to check for alerts
+        user: Authenticated user information
+
+    Returns:
+        dict: Map of coordinate keys to their active weather alerts
+
+    Raises:
+        HTTPException: 400 if invalid data, 401 if not authenticated, 500 on server error
+    """
+    logger.info(f"Alerts request from user {user['uid']}: {len(request.coordinates)} coordinates")
+
+    if len(request.coordinates) == 0:
+        raise HTTPException(status_code=400, detail="No coordinates provided")
+
+    try:
+        alerts_map = {}
+
+        # Fetch alerts for each unique coordinate
+        for element in request.coordinates:
+            latitude = element.latLng.latitude
+            longitude = element.latLng.longitude
+
+            # Truncate coordinates to match caching strategy
+            truncated_latitude = truncateCoordinate(latitude)
+            truncated_longitude = truncateCoordinate(longitude)
+
+            # Create coordinate key for response
+            coord_key = f"{latitude}:{longitude}"
+
+            # Fetch active alerts
+            alerts = getActiveAlerts(truncated_latitude, truncated_longitude)
+
+            # Only include coordinates with active alerts in response
+            if alerts:
+                alerts_map[coord_key] = alerts
+                logger.debug(f"Found {len(alerts)} alert(s) for {coord_key}")
+
+        logger.info(f"Successfully processed alerts request for user {user['uid']}: found alerts for {len(alerts_map)} location(s)")
+
+        return {
+            "alerts": alerts_map,
+            "user_info": {
+                "uid": user["uid"],
+                "membershipTier": user["membershipTier"]
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error processing alerts request for user {user['uid']}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.delete("/user/account")

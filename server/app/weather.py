@@ -11,7 +11,9 @@ from .firestore_service import (
     get_gridpoints_to_forecast_url,
     set_gridpoints_to_forecast_url,
     get_gridpoints_to_forecast,
-    set_gridpoints_to_forecast
+    set_gridpoints_to_forecast,
+    get_alerts,
+    set_alerts
 )
 import json
 from collections import defaultdict
@@ -178,6 +180,55 @@ def filterWeatherData(coords: list[Coordinates], ignoreEta: bool = False) -> dic
                 coordinate_to_forecasts_map[coordinate_key].append(filtered_period)
 
     return coordinate_to_forecasts_map
+
+
+def getActiveAlerts(latitude: str, longitude: str) -> list:
+    """
+    Fetch active weather alerts for a location from Weather.gov API.
+    Uses Firestore caching with 15-minute TTL to minimize API calls while
+    keeping alert data relatively fresh.
+
+    Args:
+        latitude: Latitude coordinate (already truncated)
+        longitude: Longitude coordinate (already truncated)
+
+    Returns:
+        list: List of active alert features from Weather.gov API
+    """
+    now = datetime.now(timezone.utc)
+
+    # Check Firestore cache first
+    cached_alerts = get_alerts(latitude, longitude)
+    if cached_alerts is not None:
+        return cached_alerts
+
+    # Cache miss - fetch from Weather.gov API
+    try:
+        alerts_url = f"https://api.weather.gov/alerts/active?point={latitude},{longitude}"
+        response = requests.get(alerts_url, headers=HEADERS, timeout=10)
+
+        if not response.ok:
+            logger.warning(f"Alerts API returned status code: {response.status_code}")
+            return []
+
+        response_json = response.json()
+
+        # Extract features (alerts) from response
+        alerts = response_json.get("features", [])
+
+        # Cache alerts for 15 minutes (alerts are time-sensitive)
+        expires_at = now + timedelta(minutes=15)
+
+        try:
+            set_alerts(latitude, longitude, alerts, expires_at)
+        except Exception as e:
+            logger.error(f"Failed to cache alerts in Firestore: {e}")
+
+        return alerts
+
+    except Exception as e:
+        logger.error(f"Failed to fetch alerts from Weather.gov API for {latitude},{longitude}: {e}")
+        return []
 
 
 def getWeather(coords: list[Coordinates]):
