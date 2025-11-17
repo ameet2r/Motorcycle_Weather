@@ -349,13 +349,14 @@ class FirestoreService:
         Returns:
             dict: Contains 'searches', 'total', 'limit', 'offset'
         """
-        # Get total count
-        all_searches = (
+        # Get total count using aggregation (efficient - doesn't load documents)
+        count_query = (
             self.db.collection(self.searches_collection)
             .where(filter=FieldFilter("userId", "==", user_id))
-            .stream()
+            .count()
         )
-        total = sum(1 for _ in all_searches)
+        count_result = count_query.get()
+        total = count_result[0][0].value
 
         # Get paginated results, sorted by createdAt descending
         searches_query = (
