@@ -10,6 +10,14 @@ from .requestTypes import DirectionsToWeatherRequest, Waypoint
 
 logger = logging.getLogger(__name__)
 
+# Disable tqdm progress bars in production to save memory
+def _get_progress_bar(iterable, desc=""):
+    """Return tqdm progress bar in development, plain iterable in production"""
+    environment = os.getenv("ENVIRONMENT", "development")
+    if environment == "production":
+        return iterable
+    return tqdm(iterable, desc=desc)
+
 
 # Function to compute distance (meters) between two lat/lon points
 def haversine(lat1, lon1, lat2, lon2):
@@ -76,7 +84,7 @@ def computeRoutes(request: DirectionsToWeatherRequest) -> tuple:
     coords = []
     
     try:
-        for _ in tqdm(range(1), desc="Fetching Routes"):
+        for _ in _get_progress_bar(range(1), desc="Fetching Routes"):
             url = "https://routes.googleapis.com/directions/v2:computeRoutes"
             headers = {
                 "Content-Type": "application/json",

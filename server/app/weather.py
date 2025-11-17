@@ -25,6 +25,14 @@ HEADERS = {
     "User-Agent": os.getenv("WEATHER_DOT_GOV_API_KEY")
 }
 
+# Disable tqdm progress bars in production to save memory
+def _get_progress_bar(iterable, desc=""):
+    """Return tqdm progress bar in development, plain iterable in production"""
+    environment = os.getenv("ENVIRONMENT", "development")
+    if environment == "production":
+        return iterable
+    return tqdm(iterable, desc=desc)
+
 
 def truncateCoordinate(coordinate: str, max_decimal_places: int = 4) -> str:
     if "." not in coordinate:
@@ -273,7 +281,7 @@ def getForecast(gridpoint: Point) -> Forecast|None:
 def filterWeatherData(coords: list[Coordinates], ignoreEta: bool = False) -> dict:
     coordinate_to_forecasts_map = defaultdict(list)
 
-    for coordinate in tqdm(coords, desc="Filtering Forecasts"):
+    for coordinate in _get_progress_bar(coords, desc="Filtering Forecasts"):
         #If ignoreEta is true or there is no eta, look at all periods of the forecast 
         if ignoreEta or not coordinate.eta:
             coordinate_key = f"{coordinate.latitude}:{coordinate.longitude}"
@@ -341,14 +349,14 @@ def getWeather(coords: list[Coordinates]):
     distinct_points = {}
 
     # Get points
-    for coordinate in tqdm(coords, desc="Getting Points"):
+    for coordinate in _get_progress_bar(coords, desc="Getting Points"):
         truncated_latitude = truncateCoordinate(coordinate.latitude)
         truncated_longitude = truncateCoordinate(coordinate.longitude)
         coordinate.point = getPoints(truncated_latitude, truncated_longitude)
         distinct_points[coordinate.point] = None
 
     # Get Weekly forecast for each point
-    for point in tqdm(distinct_points, desc="Getting Forecasts"):
+    for point in _get_progress_bar(distinct_points, desc="Getting Forecasts"):
         if point.is_not_empty():
             forecast = getForecast(point)
             distinct_points[point] = forecast
