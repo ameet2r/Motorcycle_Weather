@@ -140,6 +140,99 @@ def test_create_search_invalid_timestamp():
     assert response.status_code == 422
 
 
+def test_create_search_minimal_format():
+    """Plus user can create search with minimal format (coordinates only)"""
+    client.app.dependency_overrides[get_authenticated_user] = mock_plus_user
+
+    # Minimal format: coordinates only, no periods/summary/elevation
+    data = {
+        "id": f"test-search-minimal-{uuid.uuid4()}",
+        "timestamp": CURRENT_TIME,
+        "coordinates": [
+            {
+                "key": "37.7749:-122.4194",
+                "latitude": "37.7749",
+                "longitude": "-122.4194",
+                "address": "San Francisco, CA"
+                # No elevation, periods, summary
+            }
+        ]
+    }
+    response = client.post("/searches/", headers=HEADERS, json=data)
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["id"] == data["id"]
+    assert result["userId"] == "test_plus_user"
+    assert len(result["coordinates"]) == 1
+    assert result["coordinates"][0]["latitude"] == "37.7749"
+    assert result["coordinates"][0]["longitude"] == "-122.4194"
+    assert result["coordinates"][0]["address"] == "San Francisco, CA"
+
+    # Cleanup
+    delete_user_searches("test_plus_user")
+
+
+def test_create_search_full_format_still_works():
+    """Verify backward compatibility - full format with periods/summary still works"""
+    client.app.dependency_overrides[get_authenticated_user] = mock_plus_user
+
+    # Full format with all fields
+    data = create_test_search_data()  # This includes elevation, periods, summary
+    response = client.post("/searches/", headers=HEADERS, json=data)
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["id"] == data["id"]
+    assert len(result["coordinates"]) == 1
+    # Verify all fields are preserved
+    coord = result["coordinates"][0]
+    assert coord["elevation"] == "100m"
+    assert len(coord["periods"]) == 1
+    assert coord["summary"]["maxTemp"] == 72
+
+    # Cleanup
+    delete_user_searches("test_plus_user")
+
+
+def test_create_search_mixed_formats():
+    """Test creating search with mix of minimal and full coordinates"""
+    client.app.dependency_overrides[get_authenticated_user] = mock_pro_user
+
+    data = {
+        "id": f"test-search-mixed-{uuid.uuid4()}",
+        "timestamp": CURRENT_TIME,
+        "coordinates": [
+            {
+                # Full format
+                "key": "37.4258:-122.0987",
+                "latitude": "37.4258",
+                "longitude": "-122.0987",
+                "address": "Mountain View, CA",
+                "elevation": "100m",
+                "periods": [{"name": "This Afternoon", "temperature": 72}],
+                "summary": {"maxTemp": 72, "minTemp": 65}
+            },
+            {
+                # Minimal format
+                "key": "37.7749:-122.4194",
+                "latitude": "37.7749",
+                "longitude": "-122.4194",
+                "address": "San Francisco, CA"
+                # No elevation, periods, summary
+            }
+        ]
+    }
+    response = client.post("/searches/", headers=HEADERS, json=data)
+
+    assert response.status_code == 200
+    result = response.json()
+    assert len(result["coordinates"]) == 2
+
+    # Cleanup
+    delete_user_searches("test_pro_user")
+
+
 def test_create_search_empty_coordinates():
     """Coordinates list cannot be empty"""
     client.app.dependency_overrides[get_authenticated_user] = mock_plus_user

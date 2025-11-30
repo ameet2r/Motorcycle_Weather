@@ -137,9 +137,9 @@ class SearchCoordinate(BaseModel):
     latitude: str
     longitude: str
     address: str = Field(..., max_length=500)
-    elevation: str = Field(..., max_length=50)
-    periods: list
-    summary: dict
+    elevation: str | None = Field(None, max_length=50)  # Optional - not needed for cloud sync
+    periods: list | None = None  # Optional - stored locally only
+    summary: dict | None = None  # Optional - stored locally only
 
     @field_validator('key')
     @classmethod
