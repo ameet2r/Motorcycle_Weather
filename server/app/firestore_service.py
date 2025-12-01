@@ -289,7 +289,7 @@ class FirestoreService:
 
     # Search operations
     def create_search(self, search_id: str, user_id: str, timestamp: str,
-                     membership_tier: MembershipTier, coordinates: list) -> Dict[str, Any]:
+                     membership_tier: MembershipTier, coordinates: list, name: str | None = None) -> Dict[str, Any]:
         """
         Create a new search document for a user
 
@@ -299,6 +299,7 @@ class FirestoreService:
             timestamp: ISO timestamp from frontend
             membership_tier: User's membership tier
             coordinates: List of coordinate/weather data
+            name: Optional search name
 
         Returns:
             dict: Created search document with server timestamps
@@ -310,6 +311,7 @@ class FirestoreService:
             'id': search_id,
             'userId': user_id,
             'timestamp': timestamp,
+            'name': name,
             'createdAt': now,
             'updatedAt': now,
             'membershipTier': membership_tier,
@@ -317,7 +319,7 @@ class FirestoreService:
         }
 
         doc_ref.set(search_data)
-        logger.info(f"Created search {search_id} for user {user_id}")
+        logger.info(f"Created search {search_id} for user {user_id} with name: {name}")
         return search_data
 
     def get_search(self, search_id: str) -> Optional[Dict[str, Any]]:
@@ -421,6 +423,66 @@ class FirestoreService:
         logger.info(f"Deleted {deleted_count} searches for user {user_id}")
         return deleted_count
 
+    def check_duplicate_search_name(self, user_id: str, name: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if a search with the given name already exists for the user
+
+        Args:
+            user_id: Firebase user ID
+            name: Search name to check (case-insensitive)
+
+        Returns:
+            dict or None: Existing search document if found, None otherwise
+        """
+        if not name or not name.strip():
+            return None
+
+        # Get all searches for this user
+        searches = (
+            self.db.collection(self.searches_collection)
+            .where(filter=FieldFilter("userId", "==", user_id))
+            .stream()
+        )
+
+        # Check for name collision (case-insensitive)
+        name_lower = name.lower().strip()
+        for doc in searches:
+            search_data = doc.to_dict()
+            existing_name = search_data.get('name')
+            if existing_name and existing_name.lower().strip() == name_lower:
+                logger.debug(f"Found duplicate search name '{name}' for user {user_id}")
+                return search_data
+
+        return None
+
+    def update_search_name(self, search_id: str, name: str | None) -> Dict[str, Any]:
+        """
+        Update the name of a search
+
+        Args:
+            search_id: Search document ID
+            name: New name (None to remove name)
+
+        Returns:
+            dict: Updated search document
+        """
+        doc_ref = self.db.collection(self.searches_collection).document(search_id)
+
+        now = datetime.now(timezone.utc)
+        update_data = {
+            'name': name,
+            'updatedAt': now
+        }
+
+        doc_ref.update(update_data)
+        logger.info(f"Updated search {search_id} name to: {name}")
+
+        # Fetch and return updated document
+        updated_doc = doc_ref.get()
+        if updated_doc.exists:
+            return updated_doc.to_dict()
+        return None
+
     # Utility methods
     def cleanup_expired_documents(self) -> None:
         """Clean up expired documents across all collections"""
@@ -489,8 +551,8 @@ def delete_user(uid: str) -> bool:
 
 # Search convenience functions
 def create_search(search_id: str, user_id: str, timestamp: str,
-                 membership_tier: MembershipTier, coordinates: list) -> Dict[str, Any]:
-    return firestore_service.create_search(search_id, user_id, timestamp, membership_tier, coordinates)
+                 membership_tier: MembershipTier, coordinates: list, name: str | None = None) -> Dict[str, Any]:
+    return firestore_service.create_search(search_id, user_id, timestamp, membership_tier, coordinates, name)
 
 def get_search(search_id: str) -> Optional[Dict[str, Any]]:
     return firestore_service.get_search(search_id)
@@ -503,6 +565,12 @@ def delete_search(search_id: str) -> bool:
 
 def delete_user_searches(user_id: str) -> int:
     return firestore_service.delete_user_searches(user_id)
+
+def check_duplicate_search_name(user_id: str, name: str) -> Optional[Dict[str, Any]]:
+    return firestore_service.check_duplicate_search_name(user_id, name)
+
+def update_search_name(search_id: str, name: str | None) -> Dict[str, Any]:
+    return firestore_service.update_search_name(search_id, name)
 
 # Alerts convenience functions
 def get_alerts(latitude: str, longitude: str) -> Optional[list]:

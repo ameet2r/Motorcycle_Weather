@@ -10,12 +10,14 @@ from .app.firestore_service import (
     get_search,
     get_user_searches,
     delete_search,
-    delete_user_searches
+    delete_user_searches,
+    check_duplicate_search_name,
+    update_search_name
 )
 from .app.firebase_admin import get_firebase_app
 from .app.auth import get_authenticated_user, require_free_tier, require_plus_tier, require_pro_tier
 from firebase_admin import auth
-from fastapi import FastAPI, HTTPException, Depends, Request, Response
+from fastapi import FastAPI, HTTPException, Depends, Request, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
 from .app.coordinates import Coordinates
 from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest, CreateSearchRequest
@@ -584,16 +586,29 @@ async def create_search_endpoint(
     Only accessible to plus and pro tier users.
 
     Args:
-        request: Search creation request with id, timestamp, and coordinates
+        request: Search creation request with id, timestamp, name (optional), and coordinates
         user: Authenticated user information
 
     Returns:
         dict: Created search object with server timestamps
 
     Raises:
-        HTTPException: 400 if invalid data, 401 if not authenticated, 403 if not authorized
+        HTTPException: 400 if invalid data, 401 if not authenticated, 403 if not authorized, 409 if duplicate name
     """
     try:
+        # Validate unique name if provided
+        if request.name:
+            existing = check_duplicate_search_name(user['uid'], request.name)
+            if existing:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "A search with this name already exists",
+                        "code": "DUPLICATE_SEARCH_NAME",
+                        "existingSearchId": existing.get('id')
+                    }
+                )
+
         # Convert Pydantic models to dicts for storage
         coordinates_data = [coord.model_dump() for coord in request.coordinates]
 
@@ -603,10 +618,11 @@ async def create_search_endpoint(
             user_id=user['uid'],
             timestamp=request.timestamp,
             membership_tier=user['membershipTier'],
-            coordinates=coordinates_data
+            coordinates=coordinates_data,
+            name=request.name
         )
 
-        logger.info(f"Search {request.id} created for user {user['uid']}")
+        logger.info(f"Search {request.id} created for user {user['uid']} with name: {request.name}")
 
         # Convert datetime objects to ISO strings for JSON response
         response_data = {
@@ -617,6 +633,8 @@ async def create_search_endpoint(
 
         return response_data
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating search for user {user['uid']}: {e}")
         raise HTTPException(
@@ -680,7 +698,13 @@ async def get_searches_endpoint(
             filtered_searches = []
 
             for search_obj in result['searches']:
-                # Check if any coordinate address contains the search term
+                # Check search name first
+                search_name = search_obj.get('name', '')
+                if search_name and search_lower in search_name.lower():
+                    filtered_searches.append(search_obj)
+                    continue
+
+                # Check coordinate addresses
                 coordinates = search_obj.get('coordinates', [])
                 for coord in coordinates:
                     address = coord.get('address', '')
@@ -889,6 +913,90 @@ async def delete_all_searches_endpoint(
             detail={
                 "error": "Failed to delete searches",
                 "code": "SEARCHES_DELETE_FAILED"
+            }
+        )
+
+
+@app.patch("/searches/{search_id}")
+async def update_search_endpoint(
+    search_id: str,
+    name: str = Body(..., embed=True),
+    user: dict = Depends(require_plus_tier)
+):
+    """
+    Update a search name for the authenticated user.
+    Only accessible to plus and pro tier users, and only for their own searches.
+
+    Args:
+        search_id: Search document ID
+        name: New name for the search (empty string to remove name)
+        user: Authenticated user information
+
+    Returns:
+        dict: Updated search object
+
+    Raises:
+        HTTPException: 401/403/404/409
+    """
+    try:
+        # Get the search first to verify ownership
+        search_data = get_search(search_id)
+
+        if not search_data:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "Search not found",
+                    "code": "SEARCH_NOT_FOUND"
+                }
+            )
+
+        if search_data.get('userId') != user['uid']:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "Access denied",
+                    "code": "SEARCH_ACCESS_DENIED"
+                }
+            )
+
+        # Validate name
+        name = name.strip() if name else None
+
+        # Check for duplicates if name is being set
+        if name:
+            existing = check_duplicate_search_name(user['uid'], name)
+            if existing and existing['id'] != search_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "A search with this name already exists",
+                        "code": "DUPLICATE_SEARCH_NAME"
+                    }
+                )
+
+        # Update the search
+        updated_search = update_search_name(search_id, name)
+
+        logger.info(f"Updated search {search_id} name to: {name}")
+
+        # Convert datetime objects to ISO strings for JSON response
+        if 'createdAt' in updated_search and updated_search['createdAt']:
+            updated_search['createdAt'] = updated_search['createdAt'].isoformat()
+        if 'updatedAt' in updated_search and updated_search['updatedAt']:
+            updated_search['updatedAt'] = updated_search['updatedAt'].isoformat()
+
+        return updated_search
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating search {search_id}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "Failed to update search",
+                "code": "SEARCH_UPDATE_FAILED"
             }
         )
 

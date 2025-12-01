@@ -153,6 +153,7 @@ class CreateSearchRequest(BaseModel):
     """Request model for creating a search"""
     id: str = Field(..., min_length=1, max_length=100)
     timestamp: str = Field(..., max_length=50)
+    name: str | None = None
     coordinates: list[SearchCoordinate] = Field(..., max_length=200)
 
     @field_validator('id')
@@ -172,6 +173,24 @@ class CreateSearchRequest(BaseModel):
             datetime.fromisoformat(v).astimezone(timezone.utc)
         except (ValueError, TypeError):
             raise ValueError("Timestamp must be a valid ISO format datetime string")
+        return v
+
+    @field_validator('name')
+    @classmethod
+    def validate_search_name(cls, v):
+        """Validate search name format if provided"""
+        if v is not None:
+            # Sanitize: trim whitespace
+            v = v.strip()
+            # Empty string becomes None
+            if len(v) == 0:
+                return None
+            # Check for control characters
+            if any(ord(char) < 32 for char in v):
+                raise ValueError("Search name contains invalid control characters")
+            # Check max length
+            if len(v) > 100:
+                raise ValueError("Search name must be 100 characters or less")
         return v
 
     @field_validator('coordinates')
