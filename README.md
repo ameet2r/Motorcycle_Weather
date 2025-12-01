@@ -14,4 +14,4 @@ A FastAPI-based weather forecasting service that provides weather data for motor
 - Get weather forecasts for specific coordinates
 - Get weather forecasts along a route between two locations - **Feature in development**
 - Automatic caching with expiration to minimize API calls
-- Serverless, scalable architecture with Firestore
+- Serverless, scalable architecture with Firestore 
