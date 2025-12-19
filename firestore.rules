@@ -3,76 +3,57 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     // Security rules for Motorcycle Weather API
-    // All Firestore access should go through the authenticated backend service
-    // Direct frontend access is not allowed for security
-    
-    // Allow backend service account full access to all collections
-    // The backend validates Firebase ID tokens before accessing Firestore
+    // ALL Firestore access goes through the backend service account ONLY
+    // This prevents clients from bypassing backend authentication/authorization
+
+    // IMPORTANT: Replace this with your actual service account email
+    // Find it by running: cat /path/to/service-account-key.json | grep "client_email"
+    // Or in Firebase Console → Project Settings → Service Accounts
+    function isBackendServiceAccount() {
+      return request.auth != null &&
+        request.auth.token.email == 'YOUR-SERVICE-ACCOUNT-EMAIL@YOUR-PROJECT.iam.gserviceaccount.com';
+    }
+
+    // Default: Deny all direct client access (secure by default)
+    // This ensures all access goes through your authenticated backend API
     match /{document=**} {
-      // Only allow access from authenticated backend service
-      // This rule ensures all data access goes through your authenticated API
-      allow read, write: if request.auth != null && 
-        request.auth.token.firebase.sign_in_provider != null;
+      allow read, write: if false;
     }
-    
-    // Specific rules for weather caching collections
+
+    // Weather caching collections - backend service account only
     match /coordinates/{coordinateId} {
-      // Backend can read/write coordinate to gridpoint mappings
-      allow read, write: if request.auth != null;
+      allow read, write: if isBackendServiceAccount();
     }
-    
+
     match /gridpoints/{gridpointId} {
-      // Backend can read/write gridpoint to forecast URL mappings
-      allow read, write: if request.auth != null;
+      allow read, write: if isBackendServiceAccount();
     }
-    
+
     match /forecasts/{forecastId} {
-      // Backend can read/write forecast data
-      allow read, write: if request.auth != null;
+      allow read, write: if isBackendServiceAccount();
     }
-    
-    // Searches collection (plus/pro tier users only)
+
+    match /alerts/{alertId} {
+      allow read, write: if isBackendServiceAccount();
+    }
+
+    // Users collection - backend service account only
+    // Authorization logic is in backend code (server/main.py)
+    match /users/{userId} {
+      allow read, write: if isBackendServiceAccount();
+    }
+
+    // Searches collection - backend service account only
+    // User ownership and tier checks are handled in backend code:
+    // - Ownership verification: server/main.py:776-784, 842-850, 954-961
+    // - Tier restrictions: server/main.py:582, 651, 745, etc. (require_plus_tier dependency)
     match /searches/{searchId} {
-      // Helper function to check if user has plus or pro tier
-      function hasRequiredTier() {
-        let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-        return userDoc.data.membershipTier in ['plus', 'pro'];
-      }
-
-      // Allow read access if authenticated, owns the search, and has required tier
-      allow read: if request.auth != null
-        && resource.data.userId == request.auth.uid
-        && hasRequiredTier();
-
-      // Allow write (create/update) if authenticated and has required tier
-      // Also ensure the userId field matches the authenticated user
-      allow write: if request.auth != null
-        && request.resource.data.userId == request.auth.uid
-        && hasRequiredTier();
-
-      // Allow delete if authenticated, owns the search, and has required tier
-      allow delete: if request.auth != null
-        && resource.data.userId == request.auth.uid
-        && hasRequiredTier();
+      allow read, write: if isBackendServiceAccount();
     }
 
-    // Health check collection (used by backend health endpoint)
+    // Health check collection - backend service account only
     match /health_check/{document} {
-      // Allow backend to test Firestore connectivity
-      allow read: if request.auth != null;
+      allow read: if isBackendServiceAccount();
     }
-    
-    // // Optional: User-specific data collections (for future features)
-    // match /users/{userId} {
-    //   // Users can only access their own data through authenticated backend
-    //   allow read, write: if request.auth != null && 
-    //     request.auth.uid == userId;
-    // }
-    
-    // match /user_weather_history/{userId}/{document=**} {
-    //   // User-specific weather request history (if implemented)
-    //   allow read, write: if request.auth != null && 
-    //     request.auth.uid == userId;
-    // }
   }
 }
