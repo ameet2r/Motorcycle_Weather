@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Optional, Callable, Any, Literal
 from functools import wraps
 from fastapi import Request, HTTPException, Depends, Header
@@ -10,6 +11,30 @@ from .firestore_service import get_or_create_user
 MembershipTier = Literal["free", "plus", "pro"]
 
 logger = logging.getLogger(__name__)
+
+# In-memory user document cache with 5-minute TTL
+_USER_CACHE_TTL = 300  # seconds
+_user_cache: dict[str, tuple[dict, float]] = {}  # uid -> (user_doc, expires_at)
+
+
+def _get_cached_user(uid: str, email: str | None) -> dict:
+    """Get user document from cache or Firestore, caching the result."""
+    now = time.monotonic()
+    cached = _user_cache.get(uid)
+    if cached is not None:
+        user_doc, expires_at = cached
+        if now < expires_at:
+            return user_doc
+        del _user_cache[uid]
+
+    user_doc = get_or_create_user(uid, email)
+    _user_cache[uid] = (user_doc, now + _USER_CACHE_TTL)
+    return user_doc
+
+
+def invalidate_user_cache(uid: str) -> None:
+    """Remove a user from the in-memory cache (call after membership changes)."""
+    _user_cache.pop(uid, None)
 
 # FastAPI security scheme for Bearer token
 security = HTTPBearer(auto_error=False)
@@ -201,9 +226,9 @@ async def get_authenticated_user(
         uid = user_info['uid']
         email = user_info.get('email')
 
-        # Fetch or create user document from Firestore
+        # Fetch or create user document from cache/Firestore
         try:
-            user_doc = get_or_create_user(uid, email)
+            user_doc = _get_cached_user(uid, email)
         except Exception as e:
             logger.error(f"Failed to fetch/create user document for UID {uid}: {e}")
             raise HTTPException(
