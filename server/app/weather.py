@@ -1,6 +1,7 @@
 import requests
 import os
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from datetime import datetime, timedelta, timezone
 from .coordinates import Point, Step, Coordinates
@@ -418,25 +419,36 @@ def getActiveAlerts(latitude: str, longitude: str) -> list:
 def getWeather(coords: list[Coordinates]):
     distinct_points = {}
 
-    # Get points
-    for coordinate in _get_progress_bar(coords, desc="Getting Points"):
+    # Resolve grid points in parallel (cap at 10 threads to be polite to Weather.gov)
+    def _resolve_point(coordinate):
         truncated_latitude = truncateCoordinate(coordinate.latitude)
         truncated_longitude = truncateCoordinate(coordinate.longitude)
         coordinate.point = getPoints(truncated_latitude, truncated_longitude)
-        distinct_points[coordinate.point] = None
+        return coordinate
 
-    # Get Weekly forecast for each point
-    for point in _get_progress_bar(distinct_points, desc="Getting Forecasts"):
-        if point.is_not_empty():
-            forecast = getForecast(point)
-            distinct_points[point] = forecast
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(_resolve_point, c) for c in coords]
+        for future in as_completed(futures):
+            try:
+                coord = future.result()
+                distinct_points[coord.point] = None
+            except Exception as e:
+                logger.error(f"Error resolving grid point: {e}")
+
+    # Fetch forecasts in parallel
+    non_empty_points = [p for p in distinct_points if p.is_not_empty()]
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        future_to_point = {executor.submit(getForecast, p): p for p in non_empty_points}
+        for future in as_completed(future_to_point):
+            point = future_to_point[future]
+            try:
+                distinct_points[point] = future.result()
+            except Exception as e:
+                logger.error(f"Error fetching forecast for {point}: {e}")
 
     for coordinate in coords:
         if coordinate.point in distinct_points:
             coordinate.forecasts = distinct_points[coordinate.point]
-            
-    
-
-
 
 
