@@ -2,36 +2,24 @@ from datetime import datetime, timedelta, timezone
 
 class Period:
     def __init__(self, period_json: dict):
-        if period_json:
-            self.number = period_json["number"]
-            self.name = period_json["name"]
-            self.start_time = period_json["startTime"]
-            self.end_time = period_json["endTime"]
-            self.is_day_time = period_json["isDaytime"]
-            self.temperature = period_json["temperature"]
-            self.probability_of_precip = period_json["probabilityOfPrecipitation"]["value"]
-            self.wind_speed = period_json["windSpeed"]
-            self.wind_direction = period_json["windDirection"]
-            self.wind_gust = period_json.get("windGust")
-            self.icon = period_json["icon"]
-            self.short_forecast = period_json["shortForecast"]
-            self.detailed_forecast = period_json["detailedForecast"]
-            self.period_json = period_json
-        else:
-            self.number = ""
-            self.name = ""
-            self.start_time = ""
-            self.end_time = ""
-            self.is_day_time = ""
-            self.temperature = ""
-            self.probability_of_precip = ""
-            self.wind_speed = ""
-            self.wind_direction = ""
-            self.wind_gust = ""
-            self.icon = ""
-            self.short_forecast = ""
-            self.detailed_forecast = ""
-            self.period_json = ""
+        self.number = period_json.get("number", "")
+        self.name = period_json.get("name", "")
+        self.start_time = period_json.get("startTime", "")
+        self.end_time = period_json.get("endTime", "")
+        self.is_day_time = period_json.get("isDaytime", "")
+        self.temperature = period_json.get("temperature", "")
+        self.probability_of_precip = period_json.get("probabilityOfPrecipitation", {}).get("value", "")
+        self.wind_speed = period_json.get("windSpeed", "")
+        self.wind_direction = period_json.get("windDirection", "")
+        self.wind_gust = period_json.get("windGust", "")
+        self.visibility = period_json.get("visibility", "")
+        self.apparent_temperature = period_json.get("apparent_temperature", "")
+        self.humidity = period_json.get("humidity", "")
+        self.ride_score = period_json.get("ride_score", "")
+        self.icon = period_json.get("icon", "")
+        self.short_forecast = period_json.get("shortForecast", "")
+        self.detailed_forecast = period_json.get("detailedForecast", "")
+        self.period_json = period_json
 
 
     def __eq__(self, other):
@@ -46,6 +34,10 @@ class Period:
             self.wind_speed == other.wind_speed and
             self.wind_direction == other.wind_direction and
             self.wind_gust == other.wind_gust and
+            self.visibility == other.visibility and
+            self.apparent_temperature == other.apparent_temperature and
+            self.humidity == other.humidity and
+            self.ride_score == other.ride_score and
             self.icon == other.icon and
             self.short_forecast == other.short_forecast and
             self.detailed_forecast == other.detailed_forecast and
@@ -55,10 +47,12 @@ class Period:
         return hash((self.number, self.name, self.start_time,
                      self.end_time, self.is_day_time, self.temperature,
                      self.probability_of_precip, self.wind_speed, self.wind_direction,
-                     self.wind_gust, self.icon, self.short_forecast, self.detailed_forecast, self.period_json))
+                     self.wind_gust, self.visibility, self.apparent_temperature,
+                     self.humidity, self.ride_score,
+                     self.icon, self.short_forecast, self.detailed_forecast, self.period_json))
 
     def __repr__(self):
-        return f"Period({self.number}, {self.name}, {self.start_time}, {self.end_time}, {self.is_day_time}, {self.temperature}, {self.probability_of_precip}, {self.wind_speed}, {self.wind_direction}, {self.wind_gust}, {self.icon}, {self.short_forecast}, {self.detailed_forecast}, {self.period_json})"
+        return f"Period({self.number}, {self.name}, {self.start_time}, {self.end_time}, {self.is_day_time}, {self.temperature}, {self.probability_of_precip}, {self.wind_speed}, {self.wind_direction}, {self.wind_gust}, {self.visibility}, {self.apparent_temperature}, {self.humidity}, {self.ride_score}, {self.icon}, {self.short_forecast}, {self.detailed_forecast}, {self.period_json})"
 
     def to_json_str(self):
         return self.period_json

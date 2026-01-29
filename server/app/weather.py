@@ -5,6 +5,7 @@ from tqdm import tqdm
 from datetime import datetime, timedelta, timezone
 from .coordinates import Point, Step, Coordinates
 from .forecast import Forecast
+from .ride_quality import score_periods
 from .firestore_service import (
     get_coordinate_to_gridpoints,
     set_coordinate_to_gridpoints,
@@ -318,6 +319,9 @@ def getForecast(gridpoint: Point) -> Forecast|None:
             # This is done before caching so cached forecasts already contain all enriched data
             gridpoint_data = getGridpointData(gridpoint)
             _merge_gridpoint_data(forecast_data, gridpoint_data)
+
+            # Score periods with ML model (adds ride_score to each period dict)
+            score_periods(forecast_data["properties"]["periods"])
 
             # Use TTL from API Cache-Control header, default to 3 hours
             expires_at = time + timedelta(hours=3)
