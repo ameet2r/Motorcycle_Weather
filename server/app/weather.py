@@ -1,4 +1,5 @@
 import requests
+from requests.adapters import HTTPAdapter
 import os
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -7,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from .coordinates import Point, Step, Coordinates
 from .forecast import Forecast
 from .ride_quality import score_periods
+from .gridpoint_data import extract_gridpoint_layers, merge_gridpoint_data
 from .firestore_service import (
     get_coordinate_to_gridpoints,
     set_coordinate_to_gridpoints,
@@ -22,10 +24,14 @@ from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {
+# Persistent HTTP session with connection pooling for Weather.gov API
+_session = requests.Session()
+_session.headers.update({
     "Accept": "application/geo+json",
     "User-Agent": os.getenv("WEATHER_DOT_GOV_API_KEY")
-}
+})
+_adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10)
+_session.mount("https://", _adapter)
 
 # Disable tqdm progress bars in production to save memory
 def _get_progress_bar(iterable, desc=""):
@@ -58,7 +64,7 @@ def getPoints(truncated_latitude: str, truncated_longitude: str) -> Point:
     # Cache miss - fetch from weather.gov API
     try:
         points_url = f"https://api.weather.gov/points/{truncated_latitude},{truncated_longitude}"
-        response = requests.get(points_url, headers=HEADERS, timeout=10)
+        response = _session.get(points_url, timeout=10)
 
         # Validate response before parsing
         if not response.ok:
@@ -125,60 +131,6 @@ def getForecastUrl(gridpoint: Point, time: datetime = datetime.now(timezone.utc)
         return ""
 
 
-def _extract_gridpoint_layer(properties: dict, layer_name: str, convert_fn=None) -> dict:
-    """
-    Extract a time series layer from gridpoint properties.
-    Returns a dict mapping ISO timestamp strings to converted values.
-    """
-    if layer_name not in properties:
-        return {}
-
-    layer = properties[layer_name]
-    values = layer.get("values", [])
-    uom = layer.get("uom", "")
-    result = {}
-
-    for entry in values:
-        valid_time = entry.get("validTime", "")
-        value = entry.get("value")
-
-        if valid_time and value is not None:
-            timestamp = valid_time.split("/")[0]
-            if convert_fn:
-                result[timestamp] = convert_fn(value, uom)
-            else:
-                result[timestamp] = value
-
-    return result
-
-
-def _convert_wind_gust(value, uom):
-    """Convert wind gust to mph string."""
-    km_to_mph = 0.621371
-    if "km" in uom.lower():
-        return f"{int(round(value * km_to_mph))} mph"
-    return f"{int(round(value))} mph"
-
-
-def _convert_visibility_to_miles(value, uom):
-    """Convert visibility to miles (float)."""
-    if "m" in uom.lower() and "mi" not in uom.lower():
-        return round(value / 1609.34, 2)
-    return round(value, 2)
-
-
-def _convert_celsius_to_fahrenheit(value, uom):
-    """Convert temperature to Fahrenheit (float)."""
-    if "degc" in uom.lower() or "celsius" in uom.lower():
-        return round(value * 9 / 5 + 32, 1)
-    return round(value, 1)
-
-
-def _convert_percent(value, uom):
-    """Pass through percent values (float)."""
-    return round(value, 1)
-
-
 def getGridpointData(gridpoint: Point) -> dict:
     """
     Get supplementary time series data from raw gridpoint endpoint.
@@ -189,7 +141,7 @@ def getGridpointData(gridpoint: Point) -> dict:
 
     try:
         gridpoint_url = f"https://api.weather.gov/gridpoints/{gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}"
-        response = requests.get(gridpoint_url, headers=HEADERS, timeout=10)
+        response = _session.get(gridpoint_url, timeout=10)
 
         if not response.ok:
             logger.warning(f"Gridpoint API error - Status: {response.status_code}")
@@ -202,86 +154,11 @@ def getGridpointData(gridpoint: Point) -> dict:
             return empty_result
 
         props = gridpoint_data["properties"]
-
-        result = {
-            "windGust": _extract_gridpoint_layer(props, "windGust", _convert_wind_gust),
-            "visibility": _extract_gridpoint_layer(props, "visibility", _convert_visibility_to_miles),
-            "apparentTemperature": _extract_gridpoint_layer(props, "apparentTemperature", _convert_celsius_to_fahrenheit),
-            "relativeHumidity": _extract_gridpoint_layer(props, "relativeHumidity", _convert_percent),
-        }
-
-        return result
+        return extract_gridpoint_layers(props)
 
     except Exception as e:
         logger.error(f"Error fetching gridpoint data from API: {e}")
         return empty_result
-
-
-def _match_timestamp_value(start_time: str, data_map: dict):
-    """
-    Match a period start_time against a data map by exact match or same-hour match.
-    Returns the matched value or None.
-    """
-    if not start_time or not data_map:
-        return None
-
-    # Exact match first
-    value = data_map.get(start_time)
-    if value is not None:
-        return value
-
-    # Same-hour match
-    try:
-        period_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-        for ts, val in data_map.items():
-            try:
-                ts_dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                if (period_dt.year == ts_dt.year and
-                    period_dt.month == ts_dt.month and
-                    period_dt.day == ts_dt.day and
-                    period_dt.hour == ts_dt.hour):
-                    return val
-            except:
-                continue
-    except:
-        pass
-
-    return None
-
-
-def _merge_gridpoint_data(forecast_data: dict, gridpoint_data: dict) -> None:
-    """
-    Merge gridpoint data (wind gust, visibility, apparent temp, humidity)
-    into forecast periods by matching timestamps.
-    Modifies forecast_data in place.
-    """
-    if "properties" not in forecast_data or "periods" not in forecast_data["properties"]:
-        return
-
-    periods = forecast_data["properties"]["periods"]
-    wind_gust_map = gridpoint_data.get("windGust", {})
-    visibility_map = gridpoint_data.get("visibility", {})
-    apparent_temp_map = gridpoint_data.get("apparentTemperature", {})
-    humidity_map = gridpoint_data.get("relativeHumidity", {})
-
-    for period in periods:
-        start_time = period.get("startTime", "")
-
-        gust_value = _match_timestamp_value(start_time, wind_gust_map)
-        if gust_value is not None:
-            period["windGust"] = gust_value
-
-        vis_value = _match_timestamp_value(start_time, visibility_map)
-        if vis_value is not None:
-            period["visibility"] = vis_value
-
-        apparent_temp_value = _match_timestamp_value(start_time, apparent_temp_map)
-        if apparent_temp_value is not None:
-            period["apparent_temperature"] = apparent_temp_value
-
-        hum_value = _match_timestamp_value(start_time, humidity_map)
-        if hum_value is not None:
-            period["humidity"] = hum_value
 
 
 def getForecast(gridpoint: Point) -> Forecast|None:
@@ -302,7 +179,7 @@ def getForecast(gridpoint: Point) -> Forecast|None:
     # Cache miss - fetch from weather API
     try:
         if forecast_url:
-            forecast_response = requests.get(forecast_url, headers=HEADERS, timeout=10)
+            forecast_response = _session.get(forecast_url, timeout=10)
 
             # Validate response
             if not forecast_response.ok:
@@ -319,7 +196,7 @@ def getForecast(gridpoint: Point) -> Forecast|None:
             # Fetch gridpoint data (wind gust, visibility, apparent temp, humidity) and merge
             # This is done before caching so cached forecasts already contain all enriched data
             gridpoint_data = getGridpointData(gridpoint)
-            _merge_gridpoint_data(forecast_data, gridpoint_data)
+            merge_gridpoint_data(forecast_data, gridpoint_data)
 
             # Score periods with ML model (adds ride_score to each period dict)
             score_periods(forecast_data["properties"]["periods"])
@@ -390,7 +267,7 @@ def getActiveAlerts(latitude: str, longitude: str) -> list:
     # Cache miss - fetch from Weather.gov API
     try:
         alerts_url = f"https://api.weather.gov/alerts/active?point={latitude},{longitude}"
-        response = requests.get(alerts_url, headers=HEADERS, timeout=10)
+        response = _session.get(alerts_url, timeout=10)
 
         if not response.ok:
             logger.warning(f"Alerts API returned status code: {response.status_code}")
