@@ -123,101 +123,163 @@ def getForecastUrl(gridpoint: Point, time: datetime = datetime.now(timezone.utc)
         return ""
 
 
-def getWindGustData(gridpoint: Point) -> dict:
+def _extract_gridpoint_layer(properties: dict, layer_name: str, convert_fn=None) -> dict:
     """
-    Get wind gust time series data from raw gridpoint endpoint.
-    Returns a dict mapping ISO timestamp strings to wind gust values in mph.
+    Extract a time series layer from gridpoint properties.
+    Returns a dict mapping ISO timestamp strings to converted values.
     """
+    if layer_name not in properties:
+        return {}
+
+    layer = properties[layer_name]
+    values = layer.get("values", [])
+    uom = layer.get("uom", "")
+    result = {}
+
+    for entry in values:
+        valid_time = entry.get("validTime", "")
+        value = entry.get("value")
+
+        if valid_time and value is not None:
+            timestamp = valid_time.split("/")[0]
+            if convert_fn:
+                result[timestamp] = convert_fn(value, uom)
+            else:
+                result[timestamp] = value
+
+    return result
+
+
+def _convert_wind_gust(value, uom):
+    """Convert wind gust to mph string."""
+    km_to_mph = 0.621371
+    if "km" in uom.lower():
+        return f"{int(round(value * km_to_mph))} mph"
+    return f"{int(round(value))} mph"
+
+
+def _convert_visibility_to_miles(value, uom):
+    """Convert visibility to miles (float)."""
+    if "m" in uom.lower() and "mi" not in uom.lower():
+        return round(value / 1609.34, 2)
+    return round(value, 2)
+
+
+def _convert_celsius_to_fahrenheit(value, uom):
+    """Convert temperature to Fahrenheit (float)."""
+    if "degc" in uom.lower() or "celsius" in uom.lower():
+        return round(value * 9 / 5 + 32, 1)
+    return round(value, 1)
+
+
+def _convert_percent(value, uom):
+    """Pass through percent values (float)."""
+    return round(value, 1)
+
+
+def getGridpointData(gridpoint: Point) -> dict:
+    """
+    Get supplementary time series data from raw gridpoint endpoint.
+    Returns a dict with keys: 'windGust', 'visibility', 'apparentTemperature', 'relativeHumidity'.
+    Each maps ISO timestamp strings to converted values.
+    """
+    empty_result = {"windGust": {}, "visibility": {}, "apparentTemperature": {}, "relativeHumidity": {}}
+
     try:
         gridpoint_url = f"https://api.weather.gov/gridpoints/{gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}"
         response = requests.get(gridpoint_url, headers=HEADERS, timeout=10)
 
         if not response.ok:
             logger.warning(f"Gridpoint API error - Status: {response.status_code}")
-            return {}
+            return empty_result
 
         gridpoint_data = response.json()
 
-        # Extract windGust time series
-        if "properties" not in gridpoint_data or "windGust" not in gridpoint_data["properties"]:
-            logger.debug(f"No windGust data in gridpoint response for {gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}")
-            return {}
+        if "properties" not in gridpoint_data:
+            logger.debug(f"No properties in gridpoint response for {gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}")
+            return empty_result
 
-        wind_gust_layer = gridpoint_data["properties"]["windGust"]
-        values = wind_gust_layer.get("values", [])
-        uom = wind_gust_layer.get("uom", "")
+        props = gridpoint_data["properties"]
 
-        # Convert to dict mapping timestamp -> gust value in mph
-        gust_map = {}
-        km_to_mph = 0.621371
+        result = {
+            "windGust": _extract_gridpoint_layer(props, "windGust", _convert_wind_gust),
+            "visibility": _extract_gridpoint_layer(props, "visibility", _convert_visibility_to_miles),
+            "apparentTemperature": _extract_gridpoint_layer(props, "apparentTemperature", _convert_celsius_to_fahrenheit),
+            "relativeHumidity": _extract_gridpoint_layer(props, "relativeHumidity", _convert_percent),
+        }
 
-        for entry in values:
-            valid_time = entry.get("validTime", "")
-            value = entry.get("value")
-
-            if valid_time and value is not None:
-                # Parse ISO 8601 duration format (e.g., "2025-10-31T21:00:00+00:00/PT1H")
-                timestamp = valid_time.split("/")[0]
-
-                # Convert km/h to mph if needed
-                if "km" in uom.lower():
-                    gust_mph = value * km_to_mph
-                else:
-                    gust_mph = value  # Assume already in mph
-
-                gust_map[timestamp] = f"{int(round(gust_mph))} mph"
-
-        logger.debug(f"Retrieved {len(gust_map)} wind gust data points for gridpoint {gridpoint.grid_id}/{gridpoint.grid_x},{gridpoint.grid_y}")
-        return gust_map
+        return result
 
     except Exception as e:
-        logger.error(f"Error fetching wind gust data from gridpoint API: {e}")
-        return {}
+        logger.error(f"Error fetching gridpoint data from API: {e}")
+        return empty_result
 
 
-def _merge_wind_gust_data(forecast_data: dict, wind_gust_map: dict) -> None:
+def _match_timestamp_value(start_time: str, data_map: dict):
     """
-    Merge wind gust data into forecast periods by matching timestamps.
+    Match a period start_time against a data map by exact match or same-hour match.
+    Returns the matched value or None.
+    """
+    if not start_time or not data_map:
+        return None
+
+    # Exact match first
+    value = data_map.get(start_time)
+    if value is not None:
+        return value
+
+    # Same-hour match
+    try:
+        period_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        for ts, val in data_map.items():
+            try:
+                ts_dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                if (period_dt.year == ts_dt.year and
+                    period_dt.month == ts_dt.month and
+                    period_dt.day == ts_dt.day and
+                    period_dt.hour == ts_dt.hour):
+                    return val
+            except:
+                continue
+    except:
+        pass
+
+    return None
+
+
+def _merge_gridpoint_data(forecast_data: dict, gridpoint_data: dict) -> None:
+    """
+    Merge gridpoint data (wind gust, visibility, apparent temp, humidity)
+    into forecast periods by matching timestamps.
     Modifies forecast_data in place.
     """
     if "properties" not in forecast_data or "periods" not in forecast_data["properties"]:
         return
 
     periods = forecast_data["properties"]["periods"]
-    matched_count = 0
+    wind_gust_map = gridpoint_data.get("windGust", {})
+    visibility_map = gridpoint_data.get("visibility", {})
+    apparent_temp_map = gridpoint_data.get("apparentTemperature", {})
+    humidity_map = gridpoint_data.get("relativeHumidity", {})
 
     for period in periods:
         start_time = period.get("startTime", "")
 
-        # Try to match wind gust data by timestamp
-        # Wind gust timestamps might not match exactly, so we look for the closest match
-        if start_time:
-            # Normalize timestamp for comparison (remove timezone offset variations)
-            period_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        gust_value = _match_timestamp_value(start_time, wind_gust_map)
+        if gust_value is not None:
+            period["windGust"] = gust_value
 
-            # Look for exact match first
-            gust_value = wind_gust_map.get(start_time)
+        vis_value = _match_timestamp_value(start_time, visibility_map)
+        if vis_value is not None:
+            period["visibility"] = vis_value
 
-            # If no exact match, look for timestamp with same hour
-            if not gust_value:
-                for gust_timestamp, gust_val in wind_gust_map.items():
-                    try:
-                        gust_dt = datetime.fromisoformat(gust_timestamp.replace('Z', '+00:00'))
-                        # Match if same hour
-                        if (period_dt.year == gust_dt.year and
-                            period_dt.month == gust_dt.month and
-                            period_dt.day == gust_dt.day and
-                            period_dt.hour == gust_dt.hour):
-                            gust_value = gust_val
-                            break
-                    except:
-                        continue
+        apparent_temp_value = _match_timestamp_value(start_time, apparent_temp_map)
+        if apparent_temp_value is not None:
+            period["apparent_temperature"] = apparent_temp_value
 
-            if gust_value:
-                period["windGust"] = gust_value
-                matched_count += 1
-
-    logger.debug(f"Merged wind gust data: {matched_count}/{len(periods)} periods matched")
+        hum_value = _match_timestamp_value(start_time, humidity_map)
+        if hum_value is not None:
+            period["humidity"] = hum_value
 
 
 def getForecast(gridpoint: Point) -> Forecast|None:
@@ -228,10 +290,6 @@ def getForecast(gridpoint: Point) -> Forecast|None:
     try:
         cached_forecast = get_gridpoints_to_forecast(gridpoint.grid_id, gridpoint.grid_x, gridpoint.grid_y)
         if cached_forecast:
-            # Fetch wind gust data and merge it
-            wind_gust_map = getWindGustData(gridpoint)
-            if wind_gust_map:
-                _merge_wind_gust_data(cached_forecast, wind_gust_map)
             return Forecast(cached_forecast)
     except Exception as e:
         logger.error(f"Failed to get forecast from Firestore: {e}")
@@ -256,14 +314,22 @@ def getForecast(gridpoint: Point) -> Forecast|None:
                 logger.warning(f"Invalid forecast response structure from Weather API")
                 return Forecast({})
 
-            # Fetch wind gust data and merge it into forecast periods
-            wind_gust_map = getWindGustData(gridpoint)
-            if wind_gust_map:
-                _merge_wind_gust_data(forecast_data, wind_gust_map)
+            # Fetch gridpoint data (wind gust, visibility, apparent temp, humidity) and merge
+            # This is done before caching so cached forecasts already contain all enriched data
+            gridpoint_data = getGridpointData(gridpoint)
+            _merge_gridpoint_data(forecast_data, gridpoint_data)
 
-            expires_at = time + timedelta(hours=3)  # Expire forecast after 3 hours
+            # Use TTL from API Cache-Control header, default to 3 hours
+            expires_at = time + timedelta(hours=3)
+            cache_control = forecast_response.headers.get("Cache-Control", "")
+            try:
+                if "max-age=" in cache_control:
+                    max_age_seconds = int(cache_control.split("max-age=")[1].split(",")[0])
+                    expires_at = time + timedelta(seconds=max_age_seconds)
+            except (ValueError, IndexError):
+                logger.debug("Could not parse Cache-Control max-age from forecast response, using default 3 hours")
 
-            # Store forecast data synchronously in Firestore
+            # Store enriched forecast data in Firestore
             try:
                 set_gridpoints_to_forecast(gridpoint.grid_id, gridpoint.grid_x, gridpoint.grid_y, forecast_data, expires_at)
             except Exception as e:
