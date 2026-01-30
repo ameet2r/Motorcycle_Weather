@@ -10,3 +10,9 @@ pydantic==2.12.5
 httpx==0.28.1
 pytest==9.0.2
 slowapi==0.1.9
+pandas
+numpy
+xgboost
+scikit-learn
+joblib
+matplotlib

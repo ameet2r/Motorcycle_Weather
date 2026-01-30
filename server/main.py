@@ -20,6 +20,8 @@ from firebase_admin import auth
 from fastapi import FastAPI, HTTPException, Depends, Request, Response, Body
 from fastapi.middleware.cors import CORSMiddleware
 from .app.coordinates import Coordinates
+from .app.ride_quality import load_model
+from .app.optimization import scan_break, scan_departure_window, find_arrival_index
 from .app.requestTypes import CoordsToWeatherRequest, DirectionsToWeatherRequest, CreateSearchRequest
 from .app.constants import MESSAGE_SEPARATOR
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -147,6 +149,13 @@ async def startupEvent():
         # Don't raise here - let the app start but auth will fail
         logger.warning("Authentication will not work until Firebase is properly configured")
     
+    # Load ride quality ML model
+    try:
+        load_model()
+        logger.info("Ride quality model initialization complete")
+    except Exception as e:
+        logger.warning(f"Could not load ride quality model: {e}")
+
     # Optional: Clean up expired documents on startup
     try:
         cleanup_expired_documents()
@@ -385,6 +394,35 @@ async def coordinatesToWeather(
             "email": user["email"],
             "membershipTier": user["membershipTier"]
         }
+
+        # Compute ride quality optimizations
+        optimizations = {}
+        all_waypoint_periods = []
+
+        for coord in list_of_coordinates:
+            coord_key = f"{coord.latitude}:{coord.longitude}"
+
+            if coord.forecasts and coord.forecasts.periods:
+                all_waypoint_periods.append(coord.forecasts.periods)
+
+                # Lunch/coffee break: only when ETAs are active
+                if not request.ignoreEta and coord.eta and coord_key not in optimizations:
+                    arrival_index = find_arrival_index(coord.forecasts.periods, coord.eta)
+                    if arrival_index is not None:
+                        suggestion = scan_break(coord.forecasts.periods, arrival_index)
+                        if suggestion:
+                            optimizations[coord_key] = {"optimization": suggestion}
+
+        # Departure window: when ignoreEta is true or no ETAs present
+        departure_plan = None
+        has_any_eta = any(coord.eta for coord in list_of_coordinates)
+        if request.ignoreEta or not has_any_eta:
+            if all_waypoint_periods:
+                departure_plan = scan_departure_window(all_waypoint_periods)
+
+        result["optimizations"] = optimizations
+        result["departure_plan"] = departure_plan
+
     except Exception as e:
         logger.error(f"Error processing weather request for user {user['uid']}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
